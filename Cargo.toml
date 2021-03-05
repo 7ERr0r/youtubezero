@@ -1,0 +1,24 @@
+[package]
+name = "youtubelink"
+version = "0.1.0"
+authors = ["Szperak"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = "*"
+tokio = {version = "1.0", features = ["full"]}
+bytes = "*"
+hyper = "*"
+anyhow = "*"
+sha3 = "*"
+hex = "*"
+futures = "*"
+serde = { version = "*", features = ["derive"] }
+serde_json = "1"
+rand = "*"
+clap = "*"
+zip = { version = "0.5", default-features = false, features = ["deflate"] }
+derive_more = "*"
+twoway = "*"
