@@ -8,13 +8,17 @@ USAGE:
 
 
 OPTIONS:
-    -a, --aout <aout>...    Audio output: 'stdout' or 'audio.mp4' or 'tcp:127.0.0.1:2001' or 'unix:/tmp/audio.sock'
+    -a, --aout <aout>...    Audio output: 'stdout' or 'audio.mp4' 
+                            or 'tcp:127.0.0.1:2001' or 'unix:/tmp/audio.sock'
+
     -u, --url <url>         Youtube watch?v= url
-    -v, --vout <vout>...    Video output: 'stdout' or 'video.mp4' or 'tcp:127.0.0.1:2000' or 'unix:/tmp/video.sock'
+
+    -v, --vout <vout>...    Video output: 'stdout' or 'video.mp4' 
+                            or 'tcp:127.0.0.1:2000' or 'unix:/tmp/video.sock'
 ```
 
 ```
-cargo run --release -- --url "https://www.youtube.com/watch?v=live" -v "tcp:127.0.0.1:2000" -a "tcp:127.0.0.1:2001"
+cargo run --release -- -u "https://www.youtube.com/watch?v=live" -v "tcp:127.0.0.1:2000" -a "tcp:127.0.0.1:2001"
 ```
 
 for lowest latency:
