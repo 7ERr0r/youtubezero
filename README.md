@@ -2,6 +2,7 @@ youtubezero
 ===
 Zero latency youtube live downloader
 
+![screenshot](https://raw.githubusercontent.com/Szperak/youtubezero/main/screenshot.png)
 
 
 ```
