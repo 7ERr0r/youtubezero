@@ -1,10 +1,12 @@
-youtubelink
+youtubezero
 ===
+Zero latency youtube live downloader
+
 
 
 ```
 USAGE:
-    youtubelink.exe [OPTIONS] --url <url>   
+    youtubezero [OPTIONS] --url <url>   
 
 
 OPTIONS:

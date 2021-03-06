@@ -26,7 +26,7 @@ mod model {
     pub struct AdaptiveFormat {
         pub itag: i64,
         pub url: String,
-        pub bitrate: i64,
+        pub bitrate: Option<i64>,
         pub mimeType: String,
         //pub contentLength: String,
     }
@@ -55,7 +55,7 @@ mod model {
 
     impl std::fmt::Display for AdaptiveFormat {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}: {} / {}", self.itag, self.bitrate, self.mimeType)
+            write!(f, "{}: {:?} / {}", self.itag, self.bitrate, self.mimeType)
         }
     }
 }
@@ -89,7 +89,7 @@ async fn download_joiner(
     let (segments_tx, mut segments_rx) = mpsc::channel::<Rc<Segment>>(200);
 
     stderr!(
-        "{}Downloading: {} - {} - {} bit/s, {}\n",
+        "{}Downloading: {} - {} - {:?} bit/s, {}\n",
         prefix,
         consts.player.videoDetails.title,
         consts.video_id,
@@ -102,7 +102,7 @@ async fn download_joiner(
     while !*copy_ended.borrow() {
         let one_segment_future = join_one_segment(&mut segments_rx, txbufs, prefix.to_string());
 
-        match tokio::time::timeout(Duration::from_millis(12000), one_segment_future).await {
+        match tokio::time::timeout(Duration::from_secs(20), one_segment_future).await {
             Err(_) => {
                 stderr!("\nordered_download: segment timed out\n")?;
             }
@@ -135,6 +135,10 @@ async fn join_one_segment(
                 let out_segment_bytes = rx.recv().await;
 
                 match out_segment_bytes {
+                    None => {
+                        // Sender channel dropped
+                        break;
+                    }
                     Some(SegmentBytes::EOF) => {
                         break;
                     }
@@ -153,10 +157,6 @@ async fn join_one_segment(
                                 let _r = out.tx.try_send(bytes.clone());
                             }
                         }
-                    }
-                    None => {
-                        // Sender channel dropped
-                        break;
                     }
                 }
             }
@@ -411,7 +411,7 @@ enum SegmentBytes {
 struct Segment {
     sq: i64,
     rx: RefCell<Receiver<SegmentBytes>>,
-    tx: Sender<SegmentBytes>,
+    //tx: RefCell<Option<Sender<SegmentBytes>>>,
     //done_tx: Sender<bool>,
 }
 
@@ -422,94 +422,141 @@ async fn print_resp_headers(res: &reqwest::Response, prefix: &str) -> Result<(),
     Ok(())
 }
 
-async fn download_format_segment(
-    client: reqwest::Client,
-    segment: Rc<Segment>,
-    format: model::AdaptiveFormat,
+async fn download_format_segment_once(
+    client: &reqwest::Client,
+    segment: &Rc<Segment>,
+    tx: &Sender<SegmentBytes>,
+    format: &model::AdaptiveFormat,
     prefix: &str,
-    consts: Rc<SessionConsts>,
-) -> Result<Option<i64>, anyhow::Error> {
-    let tx = segment.tx.clone();
-    let mut head_seqnum: Option<i64> = None;
+    consts: &Rc<SessionConsts>,
+    head_seqnum_rc: &Rc<RefCell<i64>>,
+) -> Result<NextStep, anyhow::Error> {
+    let segment_url = format!("{}", format.url);
 
-    for _i in 0..3 as usize {
-        let segment_url = format!("{}", format.url);
+    let sq = segment.sq.to_string();
+    let params = [
+        ("alr", "yes"),
+        ("cpn", &consts.cpn),
+        ("cver", "2.20210304.08.01"),
+        ("sq", &sq),
+        ("rn", "100000000"),
+        ("rbuf", "0"),
+    ];
+    let url = reqwest::Url::parse_with_params(&segment_url, &params)?;
+    let req = create_request(url);
 
-        let sq = segment.sq.to_string();
-        let params = [
-            ("alr", "yes"),
-            ("cpn", &consts.cpn),
-            ("cver", "2.20210304.08.01"),
-            ("sq", &sq),
-            ("rn", "100000000"),
-            ("rbuf", "0"),
-        ];
-        let url = reqwest::Url::parse_with_params(&segment_url, &params)?;
-        let req = create_request(url);
+    let mut res = client.execute(req).await?;
+    stderr!(
+        "{}download_format_segment {}: Status: {}\n",
+        prefix,
+        segment.sq,
+        res.status()
+    )?;
 
-        let mut res = client.execute(req).await?;
+    res.headers().get("x-head-seqnum").map(|v| {
+        v.to_str().map(|s| {
+            s.parse().map(|parsed| {
+                //println!("found headnum");
+                *head_seqnum_rc.borrow_mut() = parsed;
+            })
+        })
+    });
+
+    let code = res.status().as_u16();
+    if code == 200 {
+        // OK
+        let content_type = res
+            .headers()
+            .get(CONTENT_TYPE)
+            .ok_or(YoutubelinkError::NoContentTypeHeader)?;
+
+        if content_type == "text/plain" {
+            stderr!("{}blocked! text/plain\n", prefix)?;
+            return Ok(NextStep::Stop);
+        }
+    } else if code == 204 {
+        // No Content
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        return Ok(NextStep::Retry);
+    } else if code == 503 {
+        // Service Unavailable
+        return Ok(NextStep::Stop);
+    } else {
+        // 404?
         stderr!(
-            "{}download_format_segment {}: Status: {}\n",
+            "{}failed download sq={}: {}\n",
             prefix,
             segment.sq,
             res.status()
         )?;
 
-        let code = res.status().as_u16();
-        if code == 200 {
-            // OK
-            let content_type = res
-                .headers()
-                .get(CONTENT_TYPE)
-                .ok_or(YoutubelinkError::NoContentTypeHeader)?;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        return Ok(NextStep::Retry);
+    }
 
-            if content_type == "text/plain" {
-                stderr!("{}blocked! text/plain\n", prefix)?;
+    //x-head-seqnum
+
+    //print_resp_headers(&res, prefix).await?;
+
+    while let Some(chunk) = res.chunk().await? {
+        //use tokio::prelude::*;
+        let vec_rc = Rc::new((&chunk).to_vec());
+
+        tx.send(SegmentBytes::More(vec_rc.clone()))
+            .await
+            .map_err(|_| YoutubelinkError::SegmentDataSendError)?;
+        //stderr!(".")?;
+        //stderr!("{}{} bytes\n", prefix, chunk.len())?;
+    }
+
+    Ok(NextStep::Stop)
+}
+pub enum NextStep {
+    Retry,
+    Stop,
+}
+
+async fn download_format_segment(
+    client: reqwest::Client,
+    segment: Rc<Segment>,
+    tx: Sender<SegmentBytes>,
+    format: model::AdaptiveFormat,
+    prefix: &str,
+    consts: Rc<SessionConsts>,
+    head_seqnum_rc: Rc<RefCell<i64>>,
+) -> Result<(), anyhow::Error> {
+    for _i in 0..5 as usize {
+        let once_downloader = download_format_segment_once(
+            &client,
+            &segment,
+            &tx,
+            &format,
+            prefix,
+            &consts,
+            &head_seqnum_rc,
+        );
+        match tokio::time::timeout(Duration::from_secs(20), once_downloader).await {
+            Err(_) => {
+                stderr!("{}timeout sq={}\n", prefix, segment.sq,)?;
+                continue;
+            }
+            Ok(Err(err)) => {
+                return Err(err);
+            }
+            Ok(Ok(NextStep::Retry)) => {
+                continue;
+            }
+            Ok(Ok(NextStep::Stop)) => {
                 break;
             }
-        } else if code == 204 {
-            // No Content
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            continue;
-        } else {
-            // 404?
-            stderr!(
-                "{}failed download sq={}: {}\n",
-                prefix,
-                segment.sq,
-                res.status()
-            )?;
-
-            tokio::time::sleep(Duration::from_millis(1000)).await;
-            continue;
         }
-
-        res.headers().get("x-head-seqnum").map(|v| {
-            //println!("found headnum");
-            v.to_str()
-                .map(|s| s.parse().map(|parsed| head_seqnum = Some(parsed)))
-        });
-        //x-head-seqnum
-
-        //print_resp_headers(&res, prefix).await?;
-
-        while let Some(chunk) = res.chunk().await? {
-            //use tokio::prelude::*;
-            let vec_rc = Rc::new((&chunk).to_vec());
-
-            tx.send(SegmentBytes::More(vec_rc.clone()))
-                .await
-                .map_err(|_| YoutubelinkError::SegmentDataSendError)?;
-            //stderr!(".")?;
-            //stderr!("{}{} bytes\n", prefix, chunk.len())?;
-        }
-        break;
     }
     tx.send(SegmentBytes::EOF)
         .await
         .map_err(|_| YoutubelinkError::SegmentDataSendError)?;
+    drop(tx);
 
-    Ok(head_seqnum)
+    Ok(())
 }
 
 struct SessionConsts {
@@ -529,7 +576,7 @@ async fn download_format(
     let mut seqnum: i64 = 0;
     let head_seqnum: Rc<RefCell<i64>> = Rc::new(RefCell::new(0));
 
-    let max_in_flight = 4;
+    let max_in_flight = 2;
     let (tx_tickets, mut rx_tickets) = mpsc::channel::<bool>(max_in_flight);
 
     for _i in 0..max_in_flight {
@@ -547,10 +594,10 @@ async fn download_format(
             }
         }
 
-        let (tx, rx) = mpsc::channel::<SegmentBytes>(128);
+        let (tx, rx) = mpsc::channel::<SegmentBytes>(512);
         let segment = Rc::new(Segment {
             sq: seqnum,
-            tx: tx,
+            //tx: RefCell::new(Some(tx)),
             rx: RefCell::new(rx),
         });
 
@@ -566,16 +613,25 @@ async fn download_format(
             let tx_tickets = tx_tickets.clone();
             let head_seqnum = head_seqnum.clone();
             tokio::task::spawn_local(async move {
-                let res =
-                    download_format_segment(client_clone, segment.clone(), format, prefix, consts)
-                        .await;
-                match res {
+                let download_future = download_format_segment(
+                    client_clone,
+                    segment.clone(),
+                    tx,
+                    format,
+                    prefix,
+                    consts,
+                    head_seqnum,
+                );
+
+                match download_future.await {
                     Err(err) => {
                         let _ = stderr!("{}fetch_segment err: {}\n", prefix, err);
+                        // network/http problems
+                        tokio::time::sleep(Duration::from_millis(2000)).await;
                     }
-                    Ok(Some(new_head_seqnum)) => {
+                    Ok(()) => {
                         //let _ = stderr!("{}new_head_seqnum: {}\n", prefix, new_head_seqnum);
-                        *(head_seqnum.borrow_mut()) = new_head_seqnum;
+                        //*(head_seqnum.borrow_mut()) = new_head_seqnum;
                     }
                     _ => {}
                 }
@@ -585,6 +641,10 @@ async fn download_format(
 
         tokio::time::sleep(Duration::from_millis(20)).await;
 
+        if seqnum == 0 && consts.follow_seqnum {
+            // wait for first head-seqnum
+            tokio::time::sleep(Duration::from_millis(2000)).await;
+        }
         seqnum += 1;
     }
 }
