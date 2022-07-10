@@ -68,7 +68,7 @@ pub struct YoutubezeroArgs {
     vformat: String,
 
     /// Timeout of a single request
-    #[clap(parse(try_from_str = parse_duration), default_value = "40")]
+    #[clap(short, long, parse(try_from_str = parse_duration), default_value = "40")]
     timeout_one_request: Duration,
 
     /// True to save and cache valid segments on disk (when true enforces --whole-segments)
