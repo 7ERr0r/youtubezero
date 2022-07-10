@@ -2,31 +2,35 @@
 name = "youtubezero"
 version = "0.2.0"
 authors = ["7ERr0r"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = "*"
-tokio = { version = "1.0", features = ["full"] }
-bytes = "*"
-hyper = "*"
-anyhow = "*"
-sha3 = "*"
-hex = "*"
-futures = "*"
-serde = { version = "*", features = ["derive"] }
+reqwest = "0.11"
+tokio = { version = "1.0", features = [
+    "net",
+    "fs",
+    "io-std",
+    "rt-multi-thread",
+    "process",
+] }
+bytes = "1.1"
+sha3 = "0.10"
+hex = "0.4"
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-rand = "*"
-error-chain = "*"
-clap = { version = "*", features = ["derive"] }
+rand = "0.8"
+error-chain = "0.12"
+clap = { version = "3.2", features = ["derive"] }
 #zip = { version = "*", default-features = false, features = ["deflate"] }
-derive_more = "*"
-url = "*"
-memchr = "*"
-openssl = { version = "*", features = ["vendored"] }
-boa_engine = "*"
-regex = "*"
+derive_more = "0.99"
+url = "2.2"
+memchr = "2.5"
+openssl = { version = "0.10", features = ["vendored"] }
+boa_engine = "0.15"
+regex = "1.6"
 
 # required for extra features
-nom = "*"
+nom = "7.1"
