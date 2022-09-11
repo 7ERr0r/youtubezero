@@ -74,6 +74,10 @@ pub struct YoutubezeroArgs {
     /// True to save and cache valid segments on disk (when true enforces --whole-segments)
     #[clap(short, long)]
     cache_segments: bool,
+
+    /// True to truncate and overwrite output files
+    #[clap(long)]
+    truncate: bool,
 }
 
 

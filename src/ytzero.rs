@@ -1,5 +1,8 @@
+use crate::segmenter::OrderingEvent;
 use crate::stderr;
 use bytes::Bytes;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::Receiver;
 use std::convert::TryFrom;
 
 use crate::extras::ytsigurlfix::fix_format_url_sig_n;
@@ -136,8 +139,11 @@ pub async fn run_with_av_format(
         cache_segments: args.cache_segments,
         aud_segment_dir,
         vid_segment_dir,
+        truncate_output_files: args.truncate,
 
         fake_segment_size: 128 * 1024,
+
+        
     });
 
     let local = tokio::task::LocalSet::new();
@@ -224,6 +230,10 @@ async fn start_ordered_download(
     format: Rc<RefCell<model::AdaptiveFormat>>,
     consts: Rc<SessionConsts>,
 ) -> Result<()> {
+    let chan_len = 1024 * 16;
+    let (event_tx, event_rx) = mpsc::channel::<OrderingEvent>(chan_len);
+    
+
     let vouts = outwriter::make_outs(
         isav,
         out_names,
@@ -236,7 +246,8 @@ async fn start_ordered_download(
     // tokio::task::spawn_local(async move {
     // })
     // .await??;
-    segmenter::start_download_joiner(client, txbufs, format, consts, isav, copy_ended).await?;
+
+    segmenter::start_download_joiner(client, txbufs, format, consts, isav, copy_ended, event_rx, event_tx).await?;
 
     for out_handle in join_handles {
         let _ = tokio::time::timeout(Duration::from_secs(2), out_handle).await;
@@ -263,6 +274,7 @@ pub struct SessionConsts {
     pub cache_segments: bool,
     pub aud_segment_dir: Option<PathBuf>,
     pub vid_segment_dir: Option<PathBuf>,
+    pub truncate_output_files: bool,
 
     // for offline videos
     pub fake_segment_size: i64,

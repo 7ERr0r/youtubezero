@@ -27,11 +27,11 @@ pub enum YoutubezeroError {
     #[display(fmt = "SegmentDataSendError")]
     SegmentDataSendError,
 
-    #[display(fmt = "SegmentSendError")]
-    SegmentSendError,
+    #[display(fmt = "SegmentEventSendError")]
+    SegmentEventSendError,
 
-    #[display(fmt = "SegmentJoinSendError")]
-    SegmentJoinSendError,
+    #[display(fmt = "SegmentSendOutError")]
+    SegmentSendOutError,
 
     #[display(fmt = "NoContentTypeHeader")]
     NoContentTypeHeader,

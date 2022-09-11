@@ -1,6 +1,6 @@
-use crate::zeroerror::ResultExt;
 use crate::ytzero::IsAudioVideo;
 use crate::ytzero::SessionConsts;
+use crate::zeroerror::ResultExt;
 use bytes::Bytes;
 use error_chain::ChainedError;
 use std::convert::TryInto;
@@ -154,12 +154,15 @@ pub async fn make_outs(
                         return Err(YoutubelinkError::NoUnixSocketError.into());
                     }
                 } else {
-                    let open_res = OpenOptions::new()
-                        .read(true)
-                        .append(true)
-                        .create(true)
-                        .open(other_out)
-                        .await;
+                    let mut open_opts = OpenOptions::new();
+
+                    if consts.map(|c| c.truncate_output_files).unwrap_or_default() {
+                        open_opts.truncate(true).write(true).create(true);
+                    } else {
+                        open_opts.read(true).append(true).create(true);
+                    }
+
+                    let open_res = open_opts.open(other_out).await;
                     let file = open_res.chain_err(|| format!("File::create {:?}", other_out))?;
                     outs.push(AsyncOutput::new(Box::new(file)));
                 }

@@ -1,7 +1,7 @@
 //use macros::stderr;
 use crate::segmenter::NextStep;
+use crate::segmenter::OrderingEvent;
 use crate::segmenter::Segment;
-use crate::segmenter::SegmentBytes;
 use crate::ytzero::IsAudioVideo;
 use crate::ytzero::SessionConsts;
 use crate::zeroerror::Result;
@@ -231,7 +231,7 @@ pub fn sq_to_range(
     segment: &Rc<Segment>,
 ) -> std::ops::RangeInclusive<i64> {
     let content_len = format.content_length.unwrap_or_default();
-    let sq = *segment.sq.borrow();
+    let sq = segment.sq;
     let fake_seg_size: i64 = consts.fake_segment_size;
     let from = sq * fake_seg_size;
     let to = from + fake_seg_size - 1;
@@ -252,7 +252,7 @@ struct SegmentRequest<'a> {
     pub file_range: Option<RangeInclusive<i64>>,
 
     segment: &'a Rc<Segment>,
-    tx: &'a Sender<SegmentBytes>,
+    tx: &'a Sender<OrderingEvent>,
     isav: IsAudioVideo,
     format: &'a Rc<RefCell<model::AdaptiveFormat>>,
     consts: &'a Rc<SessionConsts>,
@@ -274,7 +274,7 @@ fn init_yt_params(sr: &mut SegmentRequest) {
         sr.params.push(("headm", "3".to_string()));
     } else if sr.is_live_segmented {
         // is live?
-        let sq_str = sr.segment.sq.borrow();
+        let sq_str = sr.segment.sq;
         sr.params.push(("sq", sq_str.to_string()));
     } else {
         let range = sq_to_range(&sr.format.borrow(), sr.consts, sr.segment);
@@ -288,7 +288,7 @@ fn init_yt_params(sr: &mut SegmentRequest) {
 pub async fn download_format_segment_once(
     client: &reqwest::Client,
     segment: &Rc<Segment>,
-    tx: &Sender<SegmentBytes>,
+    tx: &Sender<OrderingEvent>,
     format: &Rc<RefCell<model::AdaptiveFormat>>,
     isav: IsAudioVideo,
     consts: &Rc<SessionConsts>,
@@ -331,7 +331,7 @@ pub async fn download_format_segment_once(
         stderr!(
             "{} download_format_segment {}/{}: start GET {}\n",
             isav,
-            *segment.sq.borrow(),
+            segment.sq,
             head_seqnum_rc.borrow(),
             urlstr
         );
@@ -340,7 +340,7 @@ pub async fn download_format_segment_once(
             "{} download_format_segment {} {}/{}: start GET\n",
             isav,
             sr.range_str.as_ref().map(|s| s.as_str()).unwrap_or(""),
-            segment.sq.borrow(),
+            segment.sq,
             head_seqnum_rc.borrow(),
         );
     }
@@ -367,7 +367,7 @@ pub async fn download_format_segment_once(
         "{} download_format_segment {} {}/{}: Status: {} ({}ms since GET)\n",
         isav,
         sr.range_str.as_ref().map(|s| s.as_str()).unwrap_or(""),
-        *segment.sq.borrow(),
+        segment.sq,
         head_seqnum_rc.borrow(),
         resp.status(),
         sr.request_get_start.elapsed().as_millis()
@@ -394,10 +394,10 @@ fn handle_headers(sr: &SegmentRequest, resp: &reqwest::Response) {
     }
 
     if let Some(parsed_sq) = opt_resp_header(&resp, "x-sequence-num") {
-        let mut sq = sr.segment.sq.borrow_mut();
-        if parsed_sq != *sq {
+        let mut fixed_sq = sr.segment.fixed_sq.borrow_mut();
+        if parsed_sq != *fixed_sq {
             if sr.segment.requested_head {
-                *sq = parsed_sq;
+                *fixed_sq = parsed_sq;
             } else {
                 // stderr!(
                 //     "{} warn: response wants to change seqnum from {} to {}/{}\n",
@@ -448,12 +448,12 @@ async fn handle_status_codes(sr: &SegmentRequest<'_>, resp: reqwest::Response) -
             "{} failed download {} sq={}/{} range={:?}: {}\n",
             sr.isav,
             sr.range_str.as_ref().map(|s| s.as_str()).unwrap_or(""),
-            *sr.segment.sq.borrow(),
+            sr.segment.sq,
             sr.head_seqnum_rc.borrow(),
             sr.range_str,
             resp.status()
         );
-        if code == 404 && *sr.segment.sq.borrow() == 0 && sr.consts.follow_head_seqnum {
+        if code == 404 && sr.segment.sq == 0 && sr.consts.follow_head_seqnum {
             return Ok(NextStep::Stop);
         }
         tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -473,7 +473,7 @@ async fn log_stats_done(
             stderr!(
                 "{} warn: sq={} requested != transmitted, {} != {}\n",
                 sr.isav,
-                *sr.segment.sq.borrow(),
+                sr.segment.sq,
                 requested,
                 transmitted,
             );
@@ -487,7 +487,7 @@ async fn log_stats_done(
         "{} sent <- segment {} sq={} speed: {:.3} MB/s ({:04}ms since OK, {:04}ms since GET)\n",
         sr.isav,
         sr.range_str.as_ref().map(|s| s.as_str()).unwrap_or(""),
-        *sr.segment.sq.borrow(),
+        sr.segment.sq,
         mbytes_per_second,
         resp_stream_start.elapsed().as_millis(),
         sr.request_get_start.elapsed().as_millis(),
@@ -497,13 +497,15 @@ async fn log_stats_done(
 
 async fn download_body(sr: &SegmentRequest<'_>, mut resp: reqwest::Response) -> Result<usize> {
     let mut transmitted = 0;
+    // Response Headers received so we know 100% the sequence number
+    let sq = sr.segment.sq;
     if sr.consts.whole_segments {
         let bytes = resp.bytes().await?;
 
         let len = bytes.len();
         transmitted += len;
         sr.tx
-            .send(SegmentBytes::More(bytes.clone()))
+            .send(OrderingEvent::SegmentData(sq, bytes.clone()))
             .await
             .map_err(|_| YoutubezeroError::SegmentDataSendError)?;
         //stderr!("{} seg={}   {} full bytes\n", prefix, segment.sq, len)?;
@@ -511,7 +513,7 @@ async fn download_body(sr: &SegmentRequest<'_>, mut resp: reqwest::Response) -> 
         if sr.consts.cache_segments {
             let bytes = bytes.clone();
             let consts = sr.consts.clone();
-            let sq = *sr.segment.sq.borrow();
+            
             let isav = sr.isav;
             tokio::task::spawn_local(async move {
                 let result = write_segment_file(&bytes, sq, consts, isav).await;
@@ -529,7 +531,7 @@ async fn download_body(sr: &SegmentRequest<'_>, mut resp: reqwest::Response) -> 
             let len = chunk.len();
             transmitted += len;
             sr.tx
-                .send(SegmentBytes::More(chunk))
+                .send(OrderingEvent::SegmentData(sq, chunk))
                 .await
                 .map_err(|_| YoutubezeroError::SegmentDataSendError)?;
             //stderr!(".")?;
@@ -581,17 +583,17 @@ pub async fn provide_from_cache(
 
 pub async fn maybe_use_file_cache(
     segment: &Rc<Segment>,
-    tx: &Sender<SegmentBytes>,
+    tx: &Sender<OrderingEvent>,
     isav: IsAudioVideo,
     consts: &Rc<SessionConsts>,
     head_seqnum_rc: &Rc<RefCell<i64>>,
 ) -> Result<bool> {
     let head: i64 = *head_seqnum_rc.borrow();
     if consts.cache_segments && head != -1 {
-        let sq: i64 = *segment.sq.borrow();
+        let sq: i64 = segment.sq;
         let buf = provide_from_cache(sq, isav, consts).await?;
         if let Some(buf) = buf {
-            let msgs = [SegmentBytes::More(buf.into()), SegmentBytes::EOF];
+            let msgs = [OrderingEvent::SegmentData(sq, buf.into()), OrderingEvent::SegmentEof(sq)];
             for msg in msgs {
                 tx.send(msg)
                     .await
@@ -607,7 +609,7 @@ pub async fn maybe_use_file_cache(
 pub async fn download_format_segment_retrying(
     client: reqwest::Client,
     segment: Rc<Segment>,
-    tx: Sender<SegmentBytes>,
+    tx: Sender<OrderingEvent>,
     format: Rc<RefCell<model::AdaptiveFormat>>,
     isav: IsAudioVideo,
     consts: Rc<SessionConsts>,
@@ -629,7 +631,7 @@ pub async fn download_format_segment_retrying(
             );
             match tokio::time::timeout(consts.timeout_one_request, once_downloader).await {
                 Err(_) => {
-                    stderr!("{}timeout sq={}\n", isav, *segment.sq.borrow(),);
+                    stderr!("{} timeout sq={}\n", isav, segment.sq,);
                     continue;
                 }
                 Ok(Err(err)) => {
@@ -645,7 +647,7 @@ pub async fn download_format_segment_retrying(
                     stderr!(
                         "{} redirect sq={} url:{}\n",
                         isav,
-                        *segment.sq.borrow(),
+                        segment.sq,
                         redirect_url
                     );
                     {
@@ -661,7 +663,7 @@ pub async fn download_format_segment_retrying(
                 }
             }
         }
-        tx.send(SegmentBytes::EOF)
+        tx.send(OrderingEvent::SegmentEof(segment.sq))
             .await
             .map_err(|_| YoutubezeroError::SegmentDataSendError)?;
         drop(tx);

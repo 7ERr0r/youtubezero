@@ -5,6 +5,9 @@ use crate::zeroerror::YoutubezeroError;
 use bytes::Bytes;
 use core::time::Duration;
 use error_chain::ChainedError;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+use std::collections::VecDeque;
 use std::time::Instant;
 use tokio::task::JoinHandle;
 
@@ -27,17 +30,25 @@ pub enum NextStep {
     Stop,
 }
 
-pub enum SegmentBytes {
-    EOF,
-    More(Bytes),
-}
+// pub enum SegmentBytes {
+//     EOF,
+//     More(Bytes),
+// }
 
 pub struct Segment {
-    pub sq: RefCell<i64>,
-    pub rx: RefCell<Receiver<SegmentBytes>>,
+    pub sq: i64,
+
+    pub fixed_sq: RefCell<i64>,
+    //pub rx: RefCell<Receiver<SegmentBytes>>,
 
     // Not implemented yet
     pub requested_head: bool,
+}
+
+#[derive(Default)]
+pub struct SegmentsBuf {
+    pub chunks: VecDeque<Bytes>,
+    pub eof: bool,
 }
 
 pub async fn start_download_joiner(
@@ -47,8 +58,10 @@ pub async fn start_download_joiner(
     consts: Rc<SessionConsts>,
     isav: IsAudioVideo,
     copy_ended: Rc<RefCell<bool>>,
+    mut event_rx: Receiver<OrderingEvent>,
+    event_tx: Sender<OrderingEvent>,
 ) -> Result<()> {
-    let (segments_tx, mut segments_rx) = mpsc::channel::<Rc<Segment>>(200);
+    //let (segments_tx, mut segments_rx) = mpsc::channel::<Rc<Segment>>(200);
 
     stderr!(
         "{} Downloading: {} - {} - {:?} bit/s, {}\n",
@@ -59,30 +72,46 @@ pub async fn start_download_joiner(
         format.borrow().mimeType
     );
 
+    let mut segment_map: BTreeMap<i64, SegmentsBuf> = Default::default();
+
     let join_handle =
-        spawn_unordered_download_format(client, format, consts.clone(), segments_tx, isav);
+        spawn_unordered_download_format(client, format, consts.clone(), isav, event_tx);
 
     while !*copy_ended.borrow() {
-        let one_segment_future =
-            join_one_segment(&mut segments_rx, consts.clone(), &mut txbufs, isav);
+        // let one_segment_future = join_one_segment(
+        //     consts.clone(),
+        //     &mut txbufs,
+        //     isav,
+        //     &mut event_rx,
+        //     &mut segment_map,
+        // );
 
-        match tokio::time::timeout(Duration::from_secs(100), one_segment_future).await {
-            Err(_) => {
-                stderr!("\n{} ordered_download: segment timed out\n\n", isav);
-            }
-            Ok(Err(err)) => {
-                return Err(err);
-            }
-            Ok(Ok(JoinSegmentResult::GoNext)) => {
-                // we got the whole segment
-            }
-            Ok(Ok(JoinSegmentResult::Eof)) => {
-                drop(txbufs);
-                stderr!("\n{} ordered_download: JoinSegmentResult::Eof\n\n", isav);
-                // end of the whole segment stream
-                break;
-            }
+        // match tokio::time::timeout(Duration::from_secs(100), one_segment_future).await {
+        //     Err(_) => {
+        //         stderr!("\n{} ordered_download: segment timed out\n\n", isav);
+        //     }
+        //     Ok(Err(err)) => {
+        //         return Err(err);
+        //     }
+        //     Ok(Ok(JoinSegmentResult::GoNext)) => {
+        //         // we got the whole segment
+        //     }
+        //     Ok(Ok(JoinSegmentResult::Eof)) => {
+        //         drop(txbufs);
+        //         stderr!("\n{} ordered_download: JoinSegmentResult::Eof\n\n", isav);
+        //         // end of the whole segment stream
+        //         break;
+        //     }
+        // }
+
+
+        let segment_event = event_rx.recv().await;
+        if let Some(event) = segment_event {
+            handle_single_event(event, &consts, isav, &mut segment_map).await?;
+        } else {
+            break;
         }
+        process_first_buf_element(&consts, &mut txbufs, isav, &mut segment_map).await?;
     }
     if let Err(_err) = tokio::time::timeout(Duration::from_secs(1), join_handle).await {
         stderr!("\n{} unordered_download_format: timed out\n\n", isav);
@@ -90,73 +119,87 @@ pub async fn start_download_joiner(
     Ok(())
 }
 
-enum JoinSegmentResult {
-    GoNext,
-    Eof,
-}
 
-// copies from Segment-s in segments_rx
-// to channels of Vec<u8> in txbufs
-async fn join_one_segment(
-    segments_rx: &mut Receiver<Rc<Segment>>,
-    consts: Rc<SessionConsts>,
-    txbufs: &mut Vec<outwriter::OutputStreamSender>,
+async fn handle_single_event(
+    segment_event: OrderingEvent,
+    consts: &Rc<SessionConsts>,
     isav: IsAudioVideo,
-) -> Result<JoinSegmentResult> {
-    let res = segments_rx.recv().await;
-    match res {
-        None => {
-            //stderr!("\n{} ordered_download: no more segments\n", isav);
-            //return Err(format!("ordered_download: no more segments {}", isav).into());
-            return Ok(JoinSegmentResult::Eof);
-        }
-        Some(segment) => {
-            {
-                let sq: i64 = *segment.sq.borrow();
-                if consts.should_discard_sq(sq) {
-                    stderr!("{} ignoring segment {}\n", isav, sq,);
-                    return Ok(JoinSegmentResult::GoNext);
-                } else {
-                    stderr!("{} <- joining segment {}\n", isav, sq,);
-                }
+    segment_map: &mut BTreeMap<i64, SegmentsBuf>,
+) -> Result<()> {
+    match segment_event {
+        OrderingEvent::SegmentStart(sq) => {
+            if consts.should_discard_sq(sq) {
+                stderr!("{} ignoring sq={}\n", isav, sq,);
+                //return Ok(JoinSegmentResult::GoNext);
+            } else {
+                stderr!("{} SegmentStart sq={}\n", isav, sq,);
+                segment_map.insert(sq, SegmentsBuf::default());
             }
+        }
+        OrderingEvent::SegmentEof(sq) => {
+            let buf = segment_map.get_mut(&sq);
+            if let Some(buf) = buf {
+                buf.eof = true;
+            }
+        }
 
-            loop {
-                let rx = &segment.rx;
-                let mut rx = rx.borrow_mut();
-
-                let out_segment_bytes = rx.recv().await;
-
-                match out_segment_bytes {
-                    None => {
-                        // Sender channel dropped
-                        break;
-                    }
-                    Some(SegmentBytes::EOF) => {
-                        break;
-                    }
-                    Some(SegmentBytes::More(bytes)) => {
-                        for out in txbufs.iter_mut() {
-                            //stderr!("x")?;
-                            // looks like with youtube we can't skip bytes...
-                            // :(
-                            if out.reliable {
-                                out.tx
-                                    .send(bytes.clone())
-                                    .await
-                                    .map_err(|_| YoutubezeroError::SegmentJoinSendError)?;
-                            } else {
-                                // non-blocking
-                                let _r = out.tx.try_send(bytes.clone());
-                            }
-                        }
-                    }
-                }
+        OrderingEvent::SegmentData(sq, chunk) => {
+            let buf = segment_map.get_mut(&sq);
+            if let Some(buf) = buf {
+                buf.chunks.push_back(chunk);
             }
         }
     }
+    Ok(())
+}
 
-    Ok(JoinSegmentResult::GoNext)
+async fn process_first_buf_element(
+    consts: &Rc<SessionConsts>,
+    txbufs: &mut Vec<outwriter::OutputStreamSender>,
+    isav: IsAudioVideo,
+    segment_map: &mut BTreeMap<i64, SegmentsBuf>,
+) -> Result<()> {
+    if let Some(entry) = segment_map.iter_mut().next() {
+        let sq = *entry.0;
+        //current_sq = Some(sq);
+
+        let buf = entry.1;
+
+        while let Some(chunk) = buf.chunks.pop_front() {
+            stderr!(
+                "{} writing buffered sq={} chunk len={}\n",
+                isav,
+                sq,
+                chunk.len()
+            );
+            write_txbufs(txbufs, &chunk).await?;
+        }
+        if buf.eof {
+            segment_map.remove(&sq);
+        }
+    }
+    Ok(())
+}
+
+async fn write_txbufs(
+    txbufs: &mut Vec<outwriter::OutputStreamSender>,
+    message: &Bytes,
+) -> Result<()> {
+    for out in txbufs.iter_mut() {
+        //stderr!("x")?;
+        // looks like with youtube we can't skip bytes...
+        // :(
+        if out.reliable {
+            out.tx
+                .send(message.clone())
+                .await
+                .map_err(|_| YoutubezeroError::SegmentDataSendError)?;
+        } else {
+            // non-blocking
+            let _r = out.tx.try_send(message.clone());
+        }
+    }
+    Ok(())
 }
 
 async fn grab_tickets(
@@ -190,12 +233,18 @@ async fn grab_tickets(
     Ok(())
 }
 
+pub enum OrderingEvent {
+    SegmentStart(i64),
+    SegmentData(i64, Bytes),
+    SegmentEof(i64),
+}
+
 async fn unordered_download_format(
     client: reqwest::Client,
     format: Rc<RefCell<model::AdaptiveFormat>>,
     isav: IsAudioVideo,
     consts: Rc<SessionConsts>,
-    segments_tx: Sender<Rc<Segment>>,
+    event_tx: Sender<OrderingEvent>,
 ) -> Result<()> {
     let is_low_latency: bool = consts.is_low_latency();
     let is_live_segmented = consts.player.videoDetails.isLive.unwrap_or_default();
@@ -228,7 +277,14 @@ async fn unordered_download_format(
 
             if diff >= max_over_head_diff {
                 let grab_invalid_tickets = max_in_flight - max_over_head_diff as usize;
-                grab_tickets(grab_invalid_tickets, &mut rx_tickets, &tx_tickets, isav, &head_seqnum).await?;
+                grab_tickets(
+                    grab_invalid_tickets,
+                    &mut rx_tickets,
+                    &tx_tickets,
+                    isav,
+                    &head_seqnum,
+                )
+                .await?;
             }
             if consts.follow_head_seqnum {
                 if diff < -20 {
@@ -238,29 +294,34 @@ async fn unordered_download_format(
             }
         }
 
-        let chan_len = if consts.whole_segments { 2 } else { 512 };
-        let (tx, rx) = mpsc::channel::<SegmentBytes>(chan_len);
-
         // TODO: maybe set requested_head if is_first
         // and set header ("headm", "3")
         let _ = is_first;
         let segment = Rc::new(Segment {
             requested_head: false,
-            sq: RefCell::new(current_seqnum),
+            sq: current_seqnum,
+            fixed_sq: RefCell::new(current_seqnum),
             //tx: RefCell::new(Some(tx)),
-            rx: RefCell::new(rx),
+            //rx: RefCell::new(rx),
         });
 
-        segments_tx
-            .send(segment.clone())
+        // segments_tx
+        //     .send(segment.clone())
+        //     .await
+        //     .map_err(|_| YoutubezeroError::SegmentSendError)?;
+
+        event_tx
+            .send(OrderingEvent::SegmentStart(segment.sq))
             .await
-            .map_err(|_| YoutubezeroError::SegmentSendError)?;
+            .map_err(|_| YoutubezeroError::SegmentEventSendError)?;
+
         let join_handle = {
             let client_clone = client.clone();
             let format = format.clone();
             let consts = consts.clone();
             let tx_tickets = tx_tickets.clone();
             let head_seqnum = head_seqnum.clone();
+            let tx = event_tx.clone();
             let join_handle = tokio::task::spawn_local(async move {
                 let download_future = youtube::download_format_segment_retrying(
                     client_clone,
@@ -318,11 +379,11 @@ fn spawn_unordered_download_format(
     client: reqwest::Client,
     format: Rc<RefCell<model::AdaptiveFormat>>,
     consts: Rc<SessionConsts>,
-    segments_tx: Sender<Rc<Segment>>,
     isav: IsAudioVideo,
+    event_tx: Sender<OrderingEvent>,
 ) -> JoinHandle<()> {
     tokio::task::spawn_local(async move {
-        let res = unordered_download_format(client, format, isav, consts, segments_tx).await;
+        let res = unordered_download_format(client, format, isav, consts, event_tx).await;
         match res {
             Err(err) => {
                 let _ = stderr_result!("{} download_format err: {}\n", isav, err);
