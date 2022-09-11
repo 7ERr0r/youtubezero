@@ -2,7 +2,6 @@ use crate::segmenter::OrderingEvent;
 use crate::stderr;
 use bytes::Bytes;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::Receiver;
 use std::convert::TryFrom;
 
 use crate::extras::ytsigurlfix::fix_format_url_sig_n;

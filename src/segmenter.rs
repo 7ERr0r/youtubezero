@@ -5,7 +5,6 @@ use crate::zeroerror::YoutubezeroError;
 use bytes::Bytes;
 use core::time::Duration;
 use error_chain::ChainedError;
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -30,16 +29,11 @@ pub enum NextStep {
     Stop,
 }
 
-// pub enum SegmentBytes {
-//     EOF,
-//     More(Bytes),
-// }
 
 pub struct Segment {
     pub sq: i64,
 
     pub fixed_sq: RefCell<i64>,
-    //pub rx: RefCell<Receiver<SegmentBytes>>,
 
     // Not implemented yet
     pub requested_head: bool,
@@ -61,8 +55,6 @@ pub async fn start_download_joiner(
     mut event_rx: Receiver<OrderingEvent>,
     event_tx: Sender<OrderingEvent>,
 ) -> Result<()> {
-    //let (segments_tx, mut segments_rx) = mpsc::channel::<Rc<Segment>>(200);
-
     stderr!(
         "{} Downloading: {} - {} - {:?} bit/s, {}\n",
         isav,
@@ -78,32 +70,6 @@ pub async fn start_download_joiner(
         spawn_unordered_download_format(client, format, consts.clone(), isav, event_tx);
 
     while !*copy_ended.borrow() {
-        // let one_segment_future = join_one_segment(
-        //     consts.clone(),
-        //     &mut txbufs,
-        //     isav,
-        //     &mut event_rx,
-        //     &mut segment_map,
-        // );
-
-        // match tokio::time::timeout(Duration::from_secs(100), one_segment_future).await {
-        //     Err(_) => {
-        //         stderr!("\n{} ordered_download: segment timed out\n\n", isav);
-        //     }
-        //     Ok(Err(err)) => {
-        //         return Err(err);
-        //     }
-        //     Ok(Ok(JoinSegmentResult::GoNext)) => {
-        //         // we got the whole segment
-        //     }
-        //     Ok(Ok(JoinSegmentResult::Eof)) => {
-        //         drop(txbufs);
-        //         stderr!("\n{} ordered_download: JoinSegmentResult::Eof\n\n", isav);
-        //         // end of the whole segment stream
-        //         break;
-        //     }
-        // }
-
 
         let segment_event = event_rx.recv().await;
         if let Some(event) = segment_event {
@@ -154,7 +120,7 @@ async fn handle_single_event(
 }
 
 async fn process_first_buf_element(
-    consts: &Rc<SessionConsts>,
+    _consts: &Rc<SessionConsts>,
     txbufs: &mut Vec<outwriter::OutputStreamSender>,
     isav: IsAudioVideo,
     segment_map: &mut BTreeMap<i64, SegmentsBuf>,
@@ -301,14 +267,8 @@ async fn unordered_download_format(
             requested_head: false,
             sq: current_seqnum,
             fixed_sq: RefCell::new(current_seqnum),
-            //tx: RefCell::new(Some(tx)),
-            //rx: RefCell::new(rx),
         });
 
-        // segments_tx
-        //     .send(segment.clone())
-        //     .await
-        //     .map_err(|_| YoutubezeroError::SegmentSendError)?;
 
         event_tx
             .send(OrderingEvent::SegmentStart(segment.sq))
