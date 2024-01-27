@@ -4,18 +4,15 @@ pub mod model;
 pub mod outwriter;
 pub mod segmenter;
 pub mod youtube;
-pub mod zeroerror;
 pub mod ytzero;
-
+pub mod zeroerror;
 
 use core::time::Duration;
-
 
 use error_chain::ChainedError;
 
 use tokio::runtime::Runtime;
 use zeroerror::Result;
-
 
 use clap::Parser;
 
@@ -80,7 +77,6 @@ pub struct YoutubezeroArgs {
     truncate: bool,
 }
 
-
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut args = YoutubezeroArgs::parse();
 
@@ -112,7 +108,6 @@ fn parse_duration(
     let seconds: f64 = arg.parse()?;
     Ok(std::time::Duration::from_micros((seconds * 1.0e6) as u64))
 }
-
 
 fn clear_nulls(out_names: &mut Vec<String>) {
     out_names.retain(|f| !is_null_file(&f))

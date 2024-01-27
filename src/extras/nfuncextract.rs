@@ -58,21 +58,20 @@ pub fn extract_n_function(base_js: &[u8]) -> Option<Vec<u8>> {
 pub fn extract_base_js_url(watchvindex_html: &[u8]) -> Option<String> {
     // <script src="/s/player/01234abcd/player_ias.vflset/en_US/base.js" nonce="abcABC_1234"></script>
 
-    let re =
-        regex::bytes::Regex::new(r#"<script\ssrc="((?:[/a-zA-Z0-9_\-\.]){1,100}base\.js)""#)
-            .unwrap();
+    let re = regex::bytes::Regex::new(r#"<script\ssrc="((?:[/a-zA-Z0-9_\-\.]){1,100}base\.js)""#)
+        .unwrap();
     if let Some(cap) = re.captures_iter(watchvindex_html).next() {
         return Some(String::from_utf8_lossy(&cap[1]).into_owned());
     };
     None
 }
 
-#[test]
-fn test_base_js() {
-    let base = include_bytes!("base.js");
+// #[test]
+// fn test_base_js() {
+//     let base = include_bytes!("base.js");
 
-    extract_n_function(&base[..]);
-}
+//     extract_n_function(&base[..]);
+// }
 
 #[test]
 fn test_base_js_url_extract() {

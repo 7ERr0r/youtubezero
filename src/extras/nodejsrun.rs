@@ -23,10 +23,7 @@ pub async fn run_script_node(token_input: &str, script_file_bytes: &[u8]) -> Res
     result
 }
 
-async fn run_node(
-    token_input: &str,
-    ytzero_js_path: &str,
-) -> Result<String> {
+async fn run_node(token_input: &str, ytzero_js_path: &str) -> Result<String> {
     let mut cmd = Command::new("node");
     cmd.arg(&ytzero_js_path);
     cmd.arg(&token_input);

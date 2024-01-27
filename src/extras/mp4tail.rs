@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 use error_chain::error_chain;
 use std::io::Read;
 use std::io::Seek;
@@ -21,7 +14,6 @@ error_chain! {
 
 }
 
-
 #[derive(Default)]
 pub struct Mp4TailResults {
     pub last_sequence_offset: Option<u64>,
@@ -29,12 +21,9 @@ pub struct Mp4TailResults {
     pub last_ftyp_offset: Option<u64>,
 }
 
-
-
 pub fn check_mp4(file_path: &PathBuf, verbose: bool) -> Result<Mp4TailResults> {
-
-    let mut file = std::fs::File::open(file_path)
-        .chain_err(|| format!("open file {:?}", file_path))?;
+    let mut file =
+        std::fs::File::open(file_path).chain_err(|| format!("open file {:?}", file_path))?;
 
     let flen_start = file.metadata()?.len();
 
@@ -48,7 +37,7 @@ pub fn check_mp4(file_path: &PathBuf, verbose: bool) -> Result<Mp4TailResults> {
         println!("searching from {}", tail_start);
     }
 
-    let mut buf = alloc_u8_vec_unsafe(tail_len as usize + offset_search);
+    let mut buf = alloc_u8_vec(tail_len as usize + offset_search);
     let nread = file.read_to_end(&mut buf)?;
     if verbose {
         println!("read {} bytes", nread);
@@ -142,7 +131,6 @@ pub fn check_mp4(file_path: &PathBuf, verbose: bool) -> Result<Mp4TailResults> {
         );
     }
 
-
     Ok(results)
 }
 
@@ -164,11 +152,8 @@ fn moov_pos(buf: &[u8]) -> usize {
     }
 }
 
-fn alloc_u8_vec_unsafe(len: usize) -> Vec<u8> {
+fn alloc_u8_vec(len: usize) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::with_capacity(len);
-    unsafe {
-        buf.set_len(len);
-    }
-
+    buf.resize(len, 0);
     buf
 }

@@ -1,8 +1,8 @@
 use crate::segmenter::OrderingEvent;
 use crate::stderr;
 use bytes::Bytes;
-use tokio::sync::mpsc;
 use std::convert::TryFrom;
+use tokio::sync::mpsc;
 
 use crate::extras::ytsigurlfix::fix_format_url_sig_n;
 use crate::macros::HexSlice;
@@ -35,7 +35,7 @@ pub async fn run_async(args: &YoutubezeroArgs) -> Result<()> {
 
     let watchv_source = PlayerResponseSource::try_from(args.url.as_str())?;
     stderr!("provided video_id: {:?}\n", watchv_source);
-    
+
     let (player_response, opt_base_js_url) =
         youtube::fetch_player_response(&client, &watchv_source)
             .await
@@ -141,8 +141,6 @@ pub async fn run_with_av_format(
         truncate_output_files: args.truncate,
 
         fake_segment_size: 128 * 1024,
-
-        
     });
 
     let local = tokio::task::LocalSet::new();
@@ -231,7 +229,6 @@ async fn start_ordered_download(
 ) -> Result<()> {
     let chan_len = 1024 * 16;
     let (event_tx, event_rx) = mpsc::channel::<OrderingEvent>(chan_len);
-    
 
     let vouts = outwriter::make_outs(
         isav,
@@ -246,7 +243,10 @@ async fn start_ordered_download(
     // })
     // .await??;
 
-    segmenter::start_download_joiner(client, txbufs, format, consts, isav, copy_ended, event_rx, event_tx).await?;
+    segmenter::start_download_joiner(
+        client, txbufs, format, consts, isav, copy_ended, event_rx, event_tx,
+    )
+    .await?;
 
     for out_handle in join_handles {
         let _ = tokio::time::timeout(Duration::from_secs(2), out_handle).await;

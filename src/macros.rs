@@ -1,5 +1,3 @@
-
-
 #[macro_export]
 macro_rules! stderr_result {
     () => (io::stderr().write_all(&[0; 0]).await);
@@ -21,7 +19,6 @@ macro_rules! stderr {
 }
 
 use std::fmt;
-
 
 pub struct HexSlice<'a>(&'a [u8]);
 

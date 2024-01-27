@@ -170,10 +170,6 @@ pub async fn fetch_player_response(
             .chain_err(|| format!("create debug file {}", debugname))?;
         file.write_all(&bytes_vec).await?;
     }
-    // stderr!(
-    //     "fetch_player_response: {}\n",
-    //     String::from_utf8_lossy(&bytes_vec)
-    // )?;
 
     const PATTERN_START: &'static [u8] = r#"var ytInitialPlayerResponse = "#.as_bytes();
 
@@ -194,9 +190,6 @@ pub async fn fetch_player_response(
         //     "fetch_player_response: {}\n",
         //     String::from_utf8_lossy(&player_resp_bytes)
         // );
-
-        // let player_response: String = from_slice_lenient(&player_resp_bytes)
-        //     .map_err(|e| YoutubelinkError::PlayerResponseParseString(e))?;
 
         if write_debug_files {
             let player_response: serde_json::Value = from_slice_lenient(&player_resp_bytes)?;
@@ -240,7 +233,6 @@ pub fn sq_to_range(
     let range = from..=to;
 
     range
-    //file_range = Some(range.clone());
 }
 
 struct SegmentRequest<'a> {
@@ -346,9 +338,7 @@ pub async fn download_format_segment_once(
     }
 
     let req = create_request(url);
-    
 
-    
     // if let Some(range) = file_range.as_ref() {
     //     let h = req.headers_mut();
     //     h.insert(
@@ -513,7 +503,7 @@ async fn download_body(sr: &SegmentRequest<'_>, mut resp: reqwest::Response) -> 
         if sr.consts.cache_segments {
             let bytes = bytes.clone();
             let consts = sr.consts.clone();
-            
+
             let isav = sr.isav;
             tokio::task::spawn_local(async move {
                 let result = write_segment_file(&bytes, sq, consts, isav).await;
@@ -593,7 +583,10 @@ pub async fn maybe_use_file_cache(
         let sq: i64 = segment.sq;
         let buf = provide_from_cache(sq, isav, consts).await?;
         if let Some(buf) = buf {
-            let msgs = [OrderingEvent::SegmentData(sq, buf.into()), OrderingEvent::SegmentEof(sq)];
+            let msgs = [
+                OrderingEvent::SegmentData(sq, buf.into()),
+                OrderingEvent::SegmentEof(sq),
+            ];
             for msg in msgs {
                 tx.send(msg)
                     .await
@@ -644,12 +637,7 @@ pub async fn download_format_segment_retrying(
                     unreachable!();
                 }
                 Ok(Ok(NextStep::RetryRedirect(redirect_url))) => {
-                    stderr!(
-                        "{} redirect sq={} url:{}\n",
-                        isav,
-                        segment.sq,
-                        redirect_url
-                    );
+                    stderr!("{} redirect sq={} url:{}\n", isav, segment.sq, redirect_url);
                     {
                         let mut f = format.borrow_mut();
                         if f.url.is_some() {

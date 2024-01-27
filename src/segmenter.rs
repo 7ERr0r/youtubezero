@@ -29,7 +29,6 @@ pub enum NextStep {
     Stop,
 }
 
-
 pub struct Segment {
     pub sq: i64,
 
@@ -70,7 +69,6 @@ pub async fn start_download_joiner(
         spawn_unordered_download_format(client, format, consts.clone(), isav, event_tx);
 
     while !*copy_ended.borrow() {
-
         let segment_event = event_rx.recv().await;
         if let Some(event) = segment_event {
             handle_single_event(event, &consts, isav, &mut segment_map).await?;
@@ -84,7 +82,6 @@ pub async fn start_download_joiner(
     }
     Ok(())
 }
-
 
 async fn handle_single_event(
     segment_event: OrderingEvent,
@@ -230,7 +227,7 @@ async fn unordered_download_format(
     let (tx_tickets, mut rx_tickets) = mpsc::channel::<bool>(max_in_flight);
 
     for _i in 0..max_in_flight {
-        drop(tx_tickets.try_send(true));
+        let _ = tx_tickets.try_send(true);
     }
 
     loop {
@@ -268,7 +265,6 @@ async fn unordered_download_format(
             sq: current_seqnum,
             fixed_sq: RefCell::new(current_seqnum),
         });
-
 
         event_tx
             .send(OrderingEvent::SegmentStart(segment.sq))

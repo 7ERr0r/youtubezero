@@ -1,10 +1,10 @@
 use crate::extras::nfuncextract::extract_n_function;
 use crate::model;
 use crate::stderr;
+use crate::ytzero::IsAudioVideo;
 use crate::zeroerror::Result;
 use crate::zeroerror::ResultExt;
 use crate::zeroerror::YoutubezeroError;
-use crate::ytzero::IsAudioVideo;
 use bytes::Bytes;
 
 pub async fn fix_format_url_sig_n(

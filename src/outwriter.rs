@@ -151,7 +151,7 @@ pub async fn make_outs(
                     }
                     #[cfg(not(target_os = "linux"))]
                     {
-                        return Err(YoutubelinkError::NoUnixSocketError.into());
+                        return Err(YoutubezeroError::NoUnixSocketError.into());
                     }
                 } else {
                     let mut open_opts = OpenOptions::new();

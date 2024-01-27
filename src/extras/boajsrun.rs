@@ -1,4 +1,3 @@
-
 use boa_engine::property::Attribute;
 use boa_engine::Context;
 
