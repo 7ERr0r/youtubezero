@@ -75,6 +75,10 @@ pub struct YoutubezeroArgs {
     /// True to truncate and overwrite output files
     #[clap(long)]
     truncate: bool,
+
+    /// Used to write debug/player_response.json
+    #[clap(long)]
+    write_debug_files: bool,
 }
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {

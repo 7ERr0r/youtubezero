@@ -37,7 +37,7 @@ pub async fn run_async(args: &YoutubezeroArgs) -> Result<()> {
     stderr!("provided video_id: {:?}\n", watchv_source);
 
     let (player_response, opt_base_js_url) =
-        youtube::fetch_player_response(&client, &watchv_source)
+        youtube::fetch_player_response(args.write_debug_files, &client, &watchv_source)
             .await
             .chain_err(|| "youtube::fetch_player_response")?;
 

@@ -142,6 +142,7 @@ impl TryFrom<&str> for PlayerResponseSource {
 }
 
 pub async fn fetch_player_response(
+    write_debug_files: bool,
     client: &reqwest::Client,
     source: &PlayerResponseSource,
 ) -> Result<(model::PlayerResponse, Option<String>)> {
@@ -159,7 +160,6 @@ pub async fn fetch_player_response(
     let base_js_url = crate::extras::nfuncextract::extract_base_js_url(&bytes_vec);
 
     //let bytes_vec = include_bytes!("../debug/watchvreplace.html").to_vec();
-    let write_debug_files = true;
     if write_debug_files {
         tokio::fs::create_dir_all(&"debug")
             .await

@@ -387,7 +387,7 @@ fn spawn_ffplay(
                 let _ = stderr_result!("child ffplay wait result was: {}\n", err.display_chain());
             }
             Ok(status) => {
-                let _ = stderr_result!("child ffplay status was: {}\n", status);
+                let _ = stderr_result!("child ffplay: {}\n", status);
             }
         }
         *process_ended.borrow_mut() = true;

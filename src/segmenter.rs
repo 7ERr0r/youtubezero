@@ -1,3 +1,4 @@
+use crate::model::AdaptiveFormat;
 use crate::ytzero::IsAudioVideo;
 use crate::ytzero::SessionConsts;
 use crate::zeroerror::Result;
@@ -8,7 +9,10 @@ use error_chain::ChainedError;
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::time::Instant;
+use tokio::task::spawn_local;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
+use tokio::time::timeout;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -116,18 +120,14 @@ async fn handle_single_event(
     Ok(())
 }
 
+/// writes from to txbufs
 async fn process_first_buf_element(
     _consts: &Rc<SessionConsts>,
     txbufs: &mut Vec<outwriter::OutputStreamSender>,
     isav: IsAudioVideo,
     segment_map: &mut BTreeMap<i64, SegmentsBuf>,
 ) -> Result<()> {
-    if let Some(entry) = segment_map.iter_mut().next() {
-        let sq = *entry.0;
-        //current_sq = Some(sq);
-
-        let buf = entry.1;
-
+    if let Some((&sq, buf)) = segment_map.iter_mut().next() {
         while let Some(chunk) = buf.chunks.pop_front() {
             stderr!(
                 "{} writing buffered sq={} chunk len={}\n",
@@ -175,7 +175,8 @@ async fn grab_tickets(
     let tickets_start = Instant::now();
     let mut grabbed = 0;
     for _i in 0..num_grab {
-        match tokio::time::timeout(Duration::from_millis(12000), rx_tickets.recv()).await {
+        let duration = Duration::from_millis(12000);
+        match timeout(duration, rx_tickets.recv()).await {
             Err(_) => {
                 break;
             }
@@ -204,131 +205,178 @@ pub enum OrderingEvent {
 
 async fn unordered_download_format(
     client: reqwest::Client,
-    format: Rc<RefCell<model::AdaptiveFormat>>,
+    aformat: Rc<RefCell<model::AdaptiveFormat>>,
     isav: IsAudioVideo,
     consts: Rc<SessionConsts>,
     event_tx: Sender<OrderingEvent>,
 ) -> Result<()> {
     let is_low_latency: bool = consts.is_low_latency();
-    let is_live_segmented = consts.player.videoDetails.isLive.unwrap_or_default();
     let max_over_head_diff: i64 = if is_low_latency { 2 } else { 1 };
 
     let mut current_seqnum: i64 = consts.start_seqnum;
-    let mut is_first = true;
-    let initial_head = if is_live_segmented {
+
+    let initial_head = if consts.player.videoDetails.isLive.unwrap_or_default() {
         -1
     } else {
-        let content_len = format.borrow().content_length.unwrap_or_default();
+        let content_len = aformat.borrow().content_length.unwrap_or_default();
         content_len / consts.fake_segment_size
     };
+
+    let stream = StreamDownloader {
+        consts: &consts,
+        aformat: &aformat,
+        max_over_head_diff,
+        initial_head,
+        isav,
+    };
+
     let head_seqnum: Rc<RefCell<i64>> = Rc::new(RefCell::new(initial_head));
+    let (tx_tickets, mut rx_tickets) = mpsc::channel::<bool>(consts.max_in_flight);
 
-    let max_in_flight = consts.max_in_flight;
-    let (tx_tickets, mut rx_tickets) = mpsc::channel::<bool>(max_in_flight);
-
-    for _i in 0..max_in_flight {
+    for _i in 0..consts.max_in_flight {
         let _ = tx_tickets.try_send(true);
     }
 
     loop {
-        let _ = rx_tickets.recv().await;
-
-        {
-            let head: i64 = *head_seqnum.borrow();
-
-            let diff = current_seqnum - head;
-
-            if diff >= max_over_head_diff {
-                let grab_invalid_tickets = max_in_flight - max_over_head_diff as usize;
-                grab_tickets(
-                    grab_invalid_tickets,
-                    &mut rx_tickets,
-                    &tx_tickets,
-                    isav,
-                    &head_seqnum,
-                )
-                .await?;
-            }
-            if consts.follow_head_seqnum {
-                if diff < -20 {
-                    current_seqnum = head;
-                    stderr!("{} set seqnum to head: {}\n", isav, head);
-                }
-            }
-        }
-
-        // TODO: maybe set requested_head if is_first
-        // and set header ("headm", "3")
-        let _ = is_first;
-        let segment = Rc::new(Segment {
-            requested_head: false,
-            sq: current_seqnum,
-            fixed_sq: RefCell::new(current_seqnum),
-        });
-
-        event_tx
-            .send(OrderingEvent::SegmentStart(segment.sq))
-            .await
-            .map_err(|_| YoutubezeroError::SegmentEventSendError)?;
-
-        let join_handle = {
-            let client_clone = client.clone();
-            let format = format.clone();
-            let consts = consts.clone();
-            let tx_tickets = tx_tickets.clone();
-            let head_seqnum = head_seqnum.clone();
-            let tx = event_tx.clone();
-            let join_handle = tokio::task::spawn_local(async move {
-                let download_future = youtube::download_format_segment_retrying(
-                    client_clone,
-                    segment.clone(),
-                    tx,
-                    format,
-                    isav,
-                    consts,
-                    head_seqnum,
-                );
-
-                match download_future.await {
-                    Err(err) => {
-                        let _ =
-                            stderr_result!("{} fetch_segment err: {}\n", isav, err.display_chain());
-                        // network/http problems
-                        tokio::time::sleep(Duration::from_millis(2000)).await;
-                    }
-                    Ok(()) => {
-                        //let _ = stderr!("{}new_head_seqnum: {}\n", prefix, new_head_seqnum);
-                        //*(head_seqnum.borrow_mut()) = new_head_seqnum;
-                    }
-                }
-                let _ = tx_tickets.send(true).await;
-            });
-            join_handle
-        };
-
-        if let Some(end_seqnum) = consts.end_seqnum {
-            if current_seqnum == end_seqnum {
-                join_handle.await?;
-                break;
-            }
-        }
-
-        if !is_live_segmented && current_seqnum == initial_head {
-            join_handle.await?;
+        let flow = unordered_download_tick(
+            &client,
+            &stream,
+            &mut current_seqnum,
+            &tx_tickets,
+            &mut rx_tickets,
+            &head_seqnum,
+            &event_tx,
+        )
+        .await?;
+        if let DownloadControlFlow::Break = flow {
             break;
         }
-
-        if current_seqnum == 0 && consts.follow_head_seqnum {
-            // wait for first head-seqnum
-
-            let _ = tokio::time::timeout(Duration::from_millis(5000), join_handle).await;
-        } else {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        current_seqnum += 1;
-        is_first = false;
     }
     Ok(())
+}
+
+enum DownloadControlFlow {
+    Continue,
+    Break,
+}
+
+struct StreamDownloader<'a> {
+    consts: &'a Rc<SessionConsts>,
+    aformat: &'a Rc<RefCell<AdaptiveFormat>>,
+    max_over_head_diff: i64,
+    initial_head: i64,
+    isav: IsAudioVideo,
+}
+
+async fn unordered_download_tick<'a>(
+    client: &reqwest::Client,
+    stream: &StreamDownloader<'a>,
+    current_seqnum: &mut i64,
+
+    tx_tickets: &Sender<bool>,
+    rx_tickets: &mut Receiver<bool>,
+    head_seqnum: &Rc<RefCell<i64>>,
+    event_tx: &Sender<OrderingEvent>,
+) -> Result<DownloadControlFlow> {
+    let _ = rx_tickets.recv().await;
+
+    {
+        let head: i64 = *head_seqnum.borrow();
+
+        let diff = *current_seqnum - head;
+
+        if diff >= stream.max_over_head_diff {
+            let grab_invalid_tickets =
+                stream.consts.max_in_flight as usize - stream.max_over_head_diff as usize;
+            grab_tickets(
+                grab_invalid_tickets,
+                rx_tickets,
+                &tx_tickets,
+                stream.isav,
+                &head_seqnum,
+            )
+            .await?;
+        }
+        if stream.consts.follow_head_seqnum {
+            if diff < -20 {
+                *current_seqnum = head;
+                stderr!("{} set seqnum to head: {}\n", stream.isav, head);
+            }
+        }
+    }
+
+    // TODO: maybe set requested_head if is_first
+    // and set header ("headm", "3")
+
+    let segment = Rc::new(Segment {
+        requested_head: false,
+        sq: *current_seqnum,
+        fixed_sq: RefCell::new(*current_seqnum),
+    });
+
+    event_tx
+        .send(OrderingEvent::SegmentStart(segment.sq))
+        .await
+        .map_err(|_| YoutubezeroError::SegmentEventSendError)?;
+
+    let join_handle = {
+        let client_clone = client.clone();
+        let aformat = stream.aformat.clone();
+        let consts = stream.consts.clone();
+        let tx_tickets = tx_tickets.clone();
+        let head_seqnum = head_seqnum.clone();
+        let tx = event_tx.clone();
+        let isav = stream.isav.clone();
+        let join_handle = tokio::task::spawn_local(async move {
+            let download_future = youtube::download_format_segment_retrying(
+                client_clone,
+                segment.clone(),
+                tx,
+                aformat,
+                isav,
+                consts,
+                head_seqnum,
+            );
+
+            match download_future.await {
+                Err(err) => {
+                    let _ = stderr_result!("{} fetch_segment err: {}\n", isav, err.display_chain());
+                    // network/http problems
+                    tokio::time::sleep(Duration::from_millis(2000)).await;
+                }
+                Ok(()) => {
+                    //let _ = stderr!("{}new_head_seqnum: {}\n", prefix, new_head_seqnum);
+                    //*(head_seqnum.borrow_mut()) = new_head_seqnum;
+                }
+            }
+            let _ = tx_tickets.send(true).await;
+        });
+        join_handle
+    };
+
+    if let Some(end_seqnum) = stream.consts.end_seqnum {
+        if *current_seqnum == end_seqnum {
+            join_handle.await?;
+            return Ok(DownloadControlFlow::Break);
+        }
+    }
+
+    let is_live_segmented = stream.consts.player.videoDetails.isLive.unwrap_or_default();
+    if !is_live_segmented && *current_seqnum == stream.initial_head {
+        join_handle.await?;
+        return Ok(DownloadControlFlow::Break);
+    }
+
+    if *current_seqnum == 0 && stream.consts.follow_head_seqnum {
+        // wait for first head-seqnum
+
+        let _ = timeout(Duration::from_millis(5000), join_handle).await;
+    } else {
+        sleep(Duration::from_millis(20)).await;
+    }
+    *current_seqnum += 1;
+
+    Ok(DownloadControlFlow::Continue)
 }
 
 fn spawn_unordered_download_format(
@@ -338,7 +386,7 @@ fn spawn_unordered_download_format(
     isav: IsAudioVideo,
     event_tx: Sender<OrderingEvent>,
 ) -> JoinHandle<()> {
-    tokio::task::spawn_local(async move {
+    spawn_local(async move {
         let res = unordered_download_format(client, format, isav, consts, event_tx).await;
         match res {
             Err(err) => {
