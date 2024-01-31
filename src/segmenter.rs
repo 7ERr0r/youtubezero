@@ -27,7 +27,6 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 
 pub enum NextStep {
-    Download(reqwest::Response),
     Retry,
     RetryRedirect(String),
     Stop,
@@ -51,7 +50,7 @@ pub struct SegmentsBuf {
 pub async fn start_download_joiner(
     client: reqwest::Client,
     mut txbufs: Vec<outwriter::OutputStreamSender>,
-    format: Rc<RefCell<model::AdaptiveFormat>>,
+    aformat: Rc<RefCell<model::AdaptiveFormat>>,
     consts: Rc<SessionConsts>,
     isav: IsAudioVideo,
     copy_ended: Rc<RefCell<bool>>,
@@ -63,19 +62,22 @@ pub async fn start_download_joiner(
         isav,
         consts.player.videoDetails.title,
         consts.video_id,
-        format.borrow().bitrate,
-        format.borrow().mimeType
+        aformat.borrow().bitrate,
+        aformat.borrow().mimeType
     );
 
     let mut segment_map: BTreeMap<i64, SegmentsBuf> = Default::default();
 
+    let stream = StreamDownloader::new(isav, consts.clone(), aformat);
+    let state = StreamState::new(&stream);
+
     let join_handle =
-        spawn_unordered_download_format(client, format, consts.clone(), isav, event_tx);
+        spawn_unordered_download_format(client, stream.clone(), state.clone(), event_tx);
 
     while !*copy_ended.borrow() {
         let segment_event = event_rx.recv().await;
         if let Some(event) = segment_event {
-            handle_single_event(event, &consts, isav, &mut segment_map).await?;
+            handle_single_event(event, &stream, &state, &mut segment_map).await?;
         } else {
             break;
         }
@@ -89,17 +91,21 @@ pub async fn start_download_joiner(
 
 async fn handle_single_event(
     segment_event: OrderingEvent,
-    consts: &Rc<SessionConsts>,
-    isav: IsAudioVideo,
+    stream: &StreamDownloader,
+    state: &Rc<RefCell<StreamState>>,
     segment_map: &mut BTreeMap<i64, SegmentsBuf>,
 ) -> Result<()> {
     match segment_event {
+        OrderingEvent::HeadChange(sq) => {
+            stderr!("{} ignoring sq={}\n", stream.isav, sq,);
+            state.borrow_mut().head_seqnum = sq;
+        }
         OrderingEvent::SegmentStart(sq) => {
-            if consts.should_discard_sq(sq) {
-                stderr!("{} ignoring sq={}\n", isav, sq,);
+            if stream.consts.should_discard_sq(sq) {
+                stderr!("{} ignoring sq={}\n", stream.isav, sq,);
                 //return Ok(JoinSegmentResult::GoNext);
             } else {
-                stderr!("{} SegmentStart sq={}\n", isav, sq,);
+                stderr!("{} SegmentStart sq={}\n", stream.isav, sq,);
                 segment_map.insert(sq, SegmentsBuf::default());
             }
         }
@@ -170,7 +176,7 @@ async fn grab_tickets(
     rx_tickets: &mut Receiver<bool>,
     tx_tickets: &Sender<bool>,
     isav: IsAudioVideo,
-    head_seqnum: &Rc<RefCell<i64>>,
+    state: Option<&Rc<RefCell<StreamState>>>,
 ) -> Result<()> {
     let tickets_start = Instant::now();
     let mut grabbed = 0;
@@ -188,16 +194,19 @@ async fn grab_tickets(
     for _i in 0..grabbed {
         let _ = tx_tickets.send(true).await;
     }
-    stderr!(
-        "{} waiting for ticket took {:04} ms ({} is head)\n",
-        isav,
-        tickets_start.elapsed().as_millis(),
-        *head_seqnum.borrow()
-    );
+    if let Some(state) = state {
+        stderr!(
+            "{} waiting for ticket took {:04} ms ({} is head)\n",
+            isav,
+            tickets_start.elapsed().as_millis(),
+            state.borrow().head_seqnum
+        );
+    }
     Ok(())
 }
 
 pub enum OrderingEvent {
+    HeadChange(i64),
     SegmentStart(i64),
     SegmentData(i64, Bytes),
     SegmentEof(i64),
@@ -205,35 +214,16 @@ pub enum OrderingEvent {
 
 async fn unordered_download_format(
     client: reqwest::Client,
-    aformat: Rc<RefCell<model::AdaptiveFormat>>,
-    isav: IsAudioVideo,
-    consts: Rc<SessionConsts>,
+    stream: StreamDownloader,
+    state: Rc<RefCell<StreamState>>,
+    // aformat: Rc<RefCell<model::AdaptiveFormat>>,
+    // consts: Rc<SessionConsts>,
+    // isav: IsAudioVideo,
     event_tx: Sender<OrderingEvent>,
 ) -> Result<()> {
-    let is_low_latency: bool = consts.is_low_latency();
-    let max_over_head_diff: i64 = if is_low_latency { 2 } else { 1 };
+    let (tx_tickets, mut rx_tickets) = mpsc::channel::<bool>(stream.consts.max_in_flight);
 
-    let mut current_seqnum: i64 = consts.start_seqnum;
-
-    let initial_head = if consts.player.videoDetails.isLive.unwrap_or_default() {
-        -1
-    } else {
-        let content_len = aformat.borrow().content_length.unwrap_or_default();
-        content_len / consts.fake_segment_size
-    };
-
-    let stream = StreamDownloader {
-        consts: &consts,
-        aformat: &aformat,
-        max_over_head_diff,
-        initial_head,
-        isav,
-    };
-
-    let head_seqnum: Rc<RefCell<i64>> = Rc::new(RefCell::new(initial_head));
-    let (tx_tickets, mut rx_tickets) = mpsc::channel::<bool>(consts.max_in_flight);
-
-    for _i in 0..consts.max_in_flight {
+    for _i in 0..stream.consts.max_in_flight {
         let _ = tx_tickets.try_send(true);
     }
 
@@ -241,10 +231,9 @@ async fn unordered_download_format(
         let flow = unordered_download_tick(
             &client,
             &stream,
-            &mut current_seqnum,
+            &state,
             &tx_tickets,
             &mut rx_tickets,
-            &head_seqnum,
             &event_tx,
         )
         .await?;
@@ -260,30 +249,71 @@ enum DownloadControlFlow {
     Break,
 }
 
-struct StreamDownloader<'a> {
-    consts: &'a Rc<SessionConsts>,
-    aformat: &'a Rc<RefCell<AdaptiveFormat>>,
+#[derive(Clone)]
+pub struct StreamDownloader {
+    consts: Rc<SessionConsts>,
+    aformat: Rc<RefCell<AdaptiveFormat>>,
     max_over_head_diff: i64,
     initial_head: i64,
     isav: IsAudioVideo,
 }
+impl StreamDownloader {
+    pub fn new(
+        isav: IsAudioVideo,
+        consts: Rc<SessionConsts>,
+        aformat: Rc<RefCell<AdaptiveFormat>>,
+    ) -> StreamDownloader {
+        let is_low_latency: bool = consts.is_low_latency();
+        let max_over_head_diff: i64 = if is_low_latency { 2 } else { 1 };
 
-async fn unordered_download_tick<'a>(
+        let initial_head = if consts.player.videoDetails.isLive.unwrap_or_default() {
+            -1
+        } else {
+            let content_len = aformat.borrow().content_length.unwrap_or_default();
+            content_len / consts.fake_segment_size
+        };
+
+        StreamDownloader {
+            consts: consts,
+            aformat: aformat,
+            max_over_head_diff,
+            initial_head,
+            isav,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct StreamState {
+    pub current_seqnum: i64,
+    pub head_seqnum: i64,
+}
+
+impl StreamState {
+    pub fn new<'a>(stream: &StreamDownloader) -> Rc<RefCell<StreamState>> {
+        Rc::new(RefCell::new(StreamState {
+            head_seqnum: stream.initial_head,
+            current_seqnum: stream.consts.start_seqnum,
+        }))
+    }
+}
+
+async fn unordered_download_tick(
     client: &reqwest::Client,
-    stream: &StreamDownloader<'a>,
-    current_seqnum: &mut i64,
+    stream: &StreamDownloader,
+    state: &Rc<RefCell<StreamState>>,
 
     tx_tickets: &Sender<bool>,
     rx_tickets: &mut Receiver<bool>,
-    head_seqnum: &Rc<RefCell<i64>>,
+
     event_tx: &Sender<OrderingEvent>,
 ) -> Result<DownloadControlFlow> {
     let _ = rx_tickets.recv().await;
 
     {
-        let head: i64 = *head_seqnum.borrow();
+        let head: i64 = state.borrow().head_seqnum;
 
-        let diff = *current_seqnum - head;
+        let diff = state.borrow().current_seqnum - head;
 
         if diff >= stream.max_over_head_diff {
             let grab_invalid_tickets =
@@ -293,14 +323,18 @@ async fn unordered_download_tick<'a>(
                 rx_tickets,
                 &tx_tickets,
                 stream.isav,
-                &head_seqnum,
+                Some(state),
             )
             .await?;
         }
         if stream.consts.follow_head_seqnum {
             if diff < -20 {
-                *current_seqnum = head;
-                stderr!("{} set seqnum to head: {}\n", stream.isav, head);
+                state.borrow_mut().current_seqnum = head;
+                stderr!(
+                    "{} set current_seqnum to head_seqnum: {}\n",
+                    stream.isav,
+                    head
+                );
             }
         }
     }
@@ -310,8 +344,8 @@ async fn unordered_download_tick<'a>(
 
     let segment = Rc::new(Segment {
         requested_head: false,
-        sq: *current_seqnum,
-        fixed_sq: RefCell::new(*current_seqnum),
+        sq: state.borrow().current_seqnum,
+        fixed_sq: RefCell::new(state.borrow().current_seqnum),
     });
 
     event_tx
@@ -324,7 +358,7 @@ async fn unordered_download_tick<'a>(
         let aformat = stream.aformat.clone();
         let consts = stream.consts.clone();
         let tx_tickets = tx_tickets.clone();
-        let head_seqnum = head_seqnum.clone();
+        let state = state.clone();
         let tx = event_tx.clone();
         let isav = stream.isav.clone();
         let join_handle = tokio::task::spawn_local(async move {
@@ -335,7 +369,7 @@ async fn unordered_download_tick<'a>(
                 aformat,
                 isav,
                 consts,
-                head_seqnum,
+                state,
             );
 
             match download_future.await {
@@ -355,39 +389,42 @@ async fn unordered_download_tick<'a>(
     };
 
     if let Some(end_seqnum) = stream.consts.end_seqnum {
-        if *current_seqnum == end_seqnum {
+        if state.borrow().current_seqnum == end_seqnum {
             join_handle.await?;
             return Ok(DownloadControlFlow::Break);
         }
     }
 
     let is_live_segmented = stream.consts.player.videoDetails.isLive.unwrap_or_default();
-    if !is_live_segmented && *current_seqnum == stream.initial_head {
+    if !is_live_segmented && state.borrow().current_seqnum == stream.initial_head {
         join_handle.await?;
         return Ok(DownloadControlFlow::Break);
     }
 
-    if *current_seqnum == 0 && stream.consts.follow_head_seqnum {
+    if state.borrow().current_seqnum == 0 && stream.consts.follow_head_seqnum {
         // wait for first head-seqnum
 
         let _ = timeout(Duration::from_millis(5000), join_handle).await;
     } else {
         sleep(Duration::from_millis(20)).await;
     }
-    *current_seqnum += 1;
+    state.borrow_mut().current_seqnum += 1;
 
     Ok(DownloadControlFlow::Continue)
 }
 
 fn spawn_unordered_download_format(
     client: reqwest::Client,
-    format: Rc<RefCell<model::AdaptiveFormat>>,
-    consts: Rc<SessionConsts>,
-    isav: IsAudioVideo,
+    // format: Rc<RefCell<model::AdaptiveFormat>>,
+    // consts: Rc<SessionConsts>,
+    // isav: IsAudioVideo,
+    stream: StreamDownloader,
+    state: Rc<RefCell<StreamState>>,
     event_tx: Sender<OrderingEvent>,
 ) -> JoinHandle<()> {
     spawn_local(async move {
-        let res = unordered_download_format(client, format, isav, consts, event_tx).await;
+        let isav = stream.isav;
+        let res = unordered_download_format(client, stream, state, event_tx).await;
         match res {
             Err(err) => {
                 let _ = stderr_result!("{} download_format err: {}\n", isav, err);
