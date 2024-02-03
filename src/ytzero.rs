@@ -262,10 +262,10 @@ pub struct SessionConsts {
     pub follow_head_seqnum: bool,
     pub start_seqnum: i64,
     pub end_seqnum: Option<i64>,
-    pub retries: usize,
+    pub retries: u16,
     pub player: model::PlayerResponse,
 
-    pub max_in_flight: usize,
+    pub max_in_flight: u16,
     pub request_number: RefCell<i64>,
     pub timeout_one_request: Duration,
 

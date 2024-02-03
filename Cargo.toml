@@ -29,8 +29,9 @@ derive_more = "0.99"
 url = "2.2"
 memchr = "2.5"
 openssl = { version = "0.10", features = ["vendored"] }
-boa_engine = "0.15"
+
 regex = "1.6"
 
 # required for extra features
 nom = "7.1"
+boa_engine = "0.15"

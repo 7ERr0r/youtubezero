@@ -38,5 +38,9 @@ pub enum YoutubezeroError {
 
     #[display(fmt = "UrlNotFoundForItag")]
     UrlNotFoundForItag,
+
+    RunningTasksIsZeroBug,
+
+    DeadlockFromHeadBug,
 }
 impl std::error::Error for YoutubezeroError {}

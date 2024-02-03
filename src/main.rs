@@ -46,7 +46,7 @@ pub struct YoutubezeroArgs {
 
     /// How many attempts to fetch one segment number
     #[clap(short, long, default_value_t = 5)]
-    retries: usize,
+    retries: u16,
 
     /// True to disable low latency and downloads only confirmed, full segments
     #[clap(short, long)]
@@ -54,7 +54,7 @@ pub struct YoutubezeroArgs {
 
     /// Max segments in flight
     #[clap(short, long, default_value_t = 20)]
-    max_in_flight: usize,
+    max_in_flight: u16,
 
     /// Audio format, eg. 251 for opus
     #[clap(long, default_value = "best")]

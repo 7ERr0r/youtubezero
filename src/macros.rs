@@ -1,3 +1,4 @@
+// async write to stderr
 #[macro_export]
 macro_rules! stderr_result {
     () => (io::stderr().write_all(&[0; 0]).await);
@@ -8,6 +9,9 @@ macro_rules! stderr_result {
     })
 }
 
+// async write to stderr
+//
+// with ?; result progagation
 #[macro_export]
 macro_rules! stderr {
     () => (io::stderr().write_all(&[0; 0]).await);

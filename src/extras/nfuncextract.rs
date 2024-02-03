@@ -29,7 +29,7 @@ pub fn extract_n_function(base_js: &[u8]) -> Option<Vec<u8>> {
     if let Some(name) = name {
         let name = name.trim_start_matches("[");
         let name = name.trim_end_matches("]");
-        println!("extract_n_function found: name:{:?}", name);
+        eprintln!("extract_n_function found: name:{:?}", name);
 
         let re_code = r#"(?x)
         (?:function\s{1,2}funcname|[{;,]\s{0,2}funcname\s{0,2}=\s{0,2}function|var\s{1,2}funcname\s{0,2}=\s{0,2}function)\s{0,2}
