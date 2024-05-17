@@ -99,10 +99,11 @@ async fn handle_single_event(
     event_tx: &Sender<OrderingEvent>,
 ) -> Result<()> {
     match segment_event {
-        OrderingEvent::HeadChange(sq) => {
-            if stream.consts.follow_head_seqnum {
-                stderr!("{} set head seqnum sq={}\n", stream.isav, sq,);
-                state.borrow_mut().head_seqnum = sq;
+        OrderingEvent::HeadChange(head) => {
+            let old_head = state.borrow().head_seqnum;
+            if old_head != head {
+                stderr!("{} set head seqnum sq={}\n", stream.isav, head,);
+                state.borrow_mut().head_seqnum = head;
             }
         }
         OrderingEvent::SegmentStart(sq) => {

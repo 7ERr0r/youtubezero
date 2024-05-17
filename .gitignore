@@ -1,6 +1,7 @@
 /target
 /video.mp4
 /audio.mp4
+/joined.mkv
 /stdout.txt
 /debug
 /Cargo.lock
