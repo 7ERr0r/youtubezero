@@ -1,122 +1,265 @@
 encrypt = function (a) {
-    var b = a.split(""), c = [1798681818, b, function (d, e, f) {
-            var k = f.length;
-            d.forEach(function (l, m, n) {
-                this.push(n[m] = f[(f.indexOf(l) - f.indexOf(this[m]) + m + k--) % f.length])
-            }, e.split(""))
+    var b = a.split("")
+        , c = [function(d, e, f, h, l, m, n, p) {
+        return e(f, h, l, m, n, p)
+    }
+        , b, 1237045444, null, -1865685197, -1050635585, 1717415059, function(d, e) {
+            d.push(e)
         }
-            , function () {
-                for (var d = 64, e = []; ++d - e.length - 32;)
-                    switch (d) {
-                        case 58:
-                            d = 96;
-                            continue;
-                        case 91:
-                            d = 44;
-                            break;
-                        case 65:
-                            d = 47;
-                            continue;
-                        case 46:
-                            d = 153;
-                        case 123:
-                            d -= 58;
-                        default:
-                            e.push(String.fromCharCode(d))
-                    }
-                return e
+        , function() {
+            for (var d = 64, e = []; ++d - e.length - 32; )
+                switch (d) {
+                    case 58:
+                        d = 96;
+                        continue;
+                    case 91:
+                        d = 44;
+                        break;
+                    case 65:
+                        d = 47;
+                        continue;
+                    case 46:
+                        d = 153;
+                    case 123:
+                        d -= 58;
+                    default:
+                        e.push(String.fromCharCode(d))
+                }
+            return e
+        }
+        , 46282013, 912950215, 1626413856, 641120168, -1014179932, 2129462292, function() {
+            for (var d = 64, e = []; ++d - e.length - 32; )
+                switch (d) {
+                    case 46:
+                        d = 95;
+                    default:
+                        e.push(String.fromCharCode(d));
+                    case 94:
+                    case 95:
+                    case 96:
+                        break;
+                    case 123:
+                        d -= 76;
+                    case 92:
+                    case 93:
+                        continue;
+                    case 58:
+                        d = 44;
+                    case 91:
+                }
+            return e
+        }
+        , b, -1902853504, function(d, e, f, h, l) {
+            return e(f, h, l)
+        }
+        , 1013097261, 1237045444, function(d) {
+            d.reverse()
+        }
+        , function(d, e, f, h, l, m, n) {
+            return d(l, m, n)
+        }
+        , -1451069955, "join", -1660789290, null, 994474639, 1351881026, -571958850, b, -270943054, "[',\\", function(d, e, f) {
+            var h = e.length;
+            f.forEach(function(l, m, n) {
+                this.push(n[m] = e[(e.indexOf(l) - e.indexOf(this[m]) + m + h--) % e.length])
+            }, d.split(""))
+        }
+        , function(d, e, f, h, l, m, n, p, q, r, t) {
+            return d(f, h, l, m, n, p, q, r, t)
+        }
+        , 669244434, function() {
+            for (var d = 64, e = []; ++d - e.length - 32; ) {
+                switch (d) {
+                    case 58:
+                        d -= 14;
+                    case 91:
+                    case 92:
+                    case 93:
+                        continue;
+                    case 123:
+                        d = 47;
+                    case 94:
+                    case 95:
+                    case 96:
+                        continue;
+                    case 46:
+                        d = 95
+                }
+                e.push(String.fromCharCode(d))
             }
-            , 1415564298, function (d, e) {
-                e = (e % d.length + d.length) % d.length;
-                d.splice(-e).reverse().forEach(function (f) {
-                    d.unshift(f)
-                })
-            }
-            , 715387316, 1381228121, -1079328693, -2083707900, -115505167, 1619563971, 1937928146, 2075486511, 144959113, -1688673264, -730619303, -1961951785, function (d, e) {
-                for (e = (e % d.length + d.length) % d.length; e--;)
-                    d.unshift(d.pop())
-            }
-            , 1570199588, 102266298, null, function (d, e) {
+            return e
+        }
+        , 100200858, -1792722203, function(d, e) {
+            e.splice(e.length, 0, d)
+        }
+        , 1787787585, 1626413856, function(d) {
+            throw d;
+        }
+        , 1454746581, 350945309, -460485539, -742050352, 496305438, function(d, e) {
+            for (e = (e % d.length + d.length) % d.length; e--; )
+                d.unshift(d.pop())
+        }
+        , function(d, e) {
+            e = (e % d.length + d.length) % d.length;
+            d.splice(e, 1)
+        }
+        , function() {
+            for (var d = 64, e = []; ++d - e.length - 32; )
+                switch (d) {
+                    case 58:
+                        d = 96;
+                        continue;
+                    case 91:
+                        d = 44;
+                        break;
+                    case 65:
+                        d = 47;
+                        continue;
+                    case 46:
+                        d = 153;
+                    case 123:
+                        d -= 58;
+                    default:
+                        e.push(String.fromCharCode(d))
+                }
+            return e
+        }
+        , -225379510, function(d, e, f, h, l, m) {
+            return e(h, l, m)
+        }
+        , function(d, e) {
+            d = (d % e.length + e.length) % e.length;
+            e.splice(-d).reverse().forEach(function(f) {
+                e.unshift(f)
+            })
+        }
+        , function(d, e) {
+            d.length != 0 && (e = (e % d.length + d.length) % d.length,
+                d.splice(0, 1, d.splice(e, 1, d[0])[0]))
+        }
+        , function(d, e) {
+            if (d.length != 0) {
                 e = (e % d.length + d.length) % d.length;
                 var f = d[0];
                 d[0] = d[e];
                 d[e] = f
             }
-            , -584962662, function (d) {
-                d.reverse()
-            }
-            , 1367128684, -1702238480, function (d, e) {
-                e = (e % d.length + d.length) % d.length;
-                d.splice(e, 1)
-            }
-            , 969960864, 2137087855, -1326287897, 841245699, 2137087855, 1894596299, b, 1894596299, 1694613204, function (d) {
-                for (var e = d.length; e;)
-                    d.push(d.splice(--e, 1)[0])
-            }
-            , 591013114, -271649020, function (d, e) {
-                e = (e % d.length + d.length) % d.length;
-                d.splice(0, 1, d.splice(e, 1, d[0])[0])
-            }
-            , 1389546098, -1395447140, -1848258562, b, 1389546098, -1433894087, null, -1359560084, "push", 263480107, null, -584962662, -206410820, function (d, e) {
-                d.push(e)
-            }
-        ];
-    c[21] = c;
-    c[47] = c;
-    c[51] = c;
+        }
+        , null, 419900561, 730601543, -1702250745, -1089256915, -483298302, function(d) {
+            for (var e = d.length; e; )
+                d.push(d.splice(--e, 1)[0])
+        }
+        , function(d, e, f, h, l, m, n, p) {
+            return d(m, n, p)
+        }
+        , -1625855834, 641120168, "Gja5", 947167953, -328260630];
+    c[3] = c;
+    c[26] = c;
+    c[56] = c;
     try {
-        c[27](c[1], c[9]),
-            c[22](c[34], c[50]),
-            c[22](c[44], c[4]),
-            c[18](c[47], c[15]),
-            c[4](c[30], c[3]),
-            c[46](c[33], c[24]),
-            c[25](c[36], c[16]),
-            c[9](c[41]),
-            c[7](c[32], c[50]),
-            c[0](c[29], c[17]),
-            c[45](c[29], c[53]),
-            c[39](c[6], c[10]),
-            c[45](c[6], c[46]),
-            c[40](c[13], c[0]),
-            c[50](c[1]),
-            c[28](c[34], c[38]),
-            c[52](c[43], c[32]),
-            c[49](c[13]),
-            c[9](c[16], c[51]),
-            c[47](c[0], c[45]),
-            c[9](c[20], c[44]),
-            c[47](c[25], c[53]),
-            c[40](c[43], c[8]),
-            c[9](c[46], c[15]),
-            c[47](c[43], c[4]),
-            c[52](c[0], c[55]),
-            c[29](c[46], c[21]),
-            c[19](c[4], c[51]),
-            c[50](c[4], c[46]),
-            c[25](c[46], c[13]),
-            c[0](c[47], c[21]),
-            c[4](c[33], c[10]),
-            c[46](c[7], c[38], c[47]()),
-            c[16](c[33], c[2]),
-            c[29](c[51], c[34]),
-            c[13](c[51]),
-            c[6](c[22], c[0]),
-            c[51](c[10], c[11]),
-            c[52](c[45]),
-            c[5](c[45], c[23]),
-            c[36](c[20], c[34])
+        try {
+            c[17] < -2 && (0,
+                c[18])((0,
+                c[52])((0,
+                c[21])(c[16]), c[54], (0,
+                c[18])((0,
+                c[7])(c[26], c[29]), c[48], c[30], c[47]), c[1], c[17]), c[53], c[35], c[3]),
+            c[31] === 3 && ((0,
+                c[46])(c[-11135 - Math.pow(4, 2) - -11206]),
+                "true") || (0,
+                c[32])(c[55], c[11]),
+                (0,
+                    c[26])(c[55]),
+            (0,
+                c[37])(c[3], c[57]) + (0,
+                c[33])(c[0], c[12])
+        } catch (d) {
+            c[49] >= -1385 + 51 * Math.pow(3, 3) && (c[22] > -3 ? (0,
+                c[2])((0,
+                c[54])((0,
+                c[17])(c[50], (0,
+                c[20])(), c[55]), c[2], ((0,
+                c[38])(c[14], c[221 * Math.pow(6, 5) - 1718461]),
+                c[32])(c[57], c[new Date("1970-01-01T06:46:03.000+06:45") / 1E3]), c[17], c[8], (0,
+                c[62])(), c[55]), c[17], c[50], (0,
+                c[62])(), c[0]) : (0,
+                c[6])(c[46], (0,
+                c[Math.pow(8, 2) * 69 - 4384])(c[0], c[25]), (0,
+                c[2])((0,
+                c[33])(c[55], c[45]), c[46], c[new Date("1970-01-01T06:15:14.000+06:15") / 1E3]), (0,
+                c[17])(c[8], (0,
+                c[62])(), c[55]), c[14])),
+            (c[58 - 224 % Math.pow(1, 5)] !== -7 || ((0,
+                c[2])((0,
+                c[5])(c[55]), c[17], c[50], (0,
+                c[69])(), c[14]),
+                NaN)) && (0,
+                c[2])((0,
+                c[39])(c[10], c[9]), c[5330 - Math.pow(2, 4) + -5268], c[14]),
+            c[22] < 9 && (0,
+                c[47])(c[39], (0,
+                c[36])((0,
+                c[33])(c[14], c[64]) === (0,
+                c[new Date("1969-12-31T17:30:46.000-06:30") / 1E3])(c[40]), c[64], (0,
+                c[23])(c[19]), c[19]), (0,
+                c[67])((0,
+                c[64])(c[59]), c[37], c[41], c[55]), (0,
+                c[32])(c[55], c[new Date("1970-01-01T07:16:08.000+07:15") / 1E3]), ((((0,
+                c[37])(c[56], c[50]),
+                c[39])(c[10], c[15]),
+                c[17])(c[66], (0,
+                c[69])(), c[55]),
+            ((0,
+                c[39])(c[55], c[27]),
+                c[184 + Math.pow(5, 4) + -772])(c[67], c[10]) / (0,
+                c[56])(c[32], c[39]),
+                c[55])(c[47], c[58]), c[16], c[57])
+        } finally {
+            c[57] != -1 && (c[8] == 0 ? (0,
+                c[62])(c[14], c[2]) ^ (0,
+                c[62])(c[43], c[Math.pow(1, 4) - 14399 + 14408]) : (0,
+                c[31])((0,
+                c[68])(c[-23285 - -68 * Math.pow(7, 3)], c[36]), c[66], c[-40470 + Math.pow(3, new Date("1969-12-31T13:30:05.000-10:30") / 1E3) + 40245], c[16]))
+        }
+        try {
+            c[68] >= -2 && (c[41] <= -7 && (((0,
+                c[Math.pow(1, 2) + 0 + 5])(c[14], c[16]),
+                c[60])(c[21], c[47]) < (0,
+                c[69])(c[24], c[61]),
+                "true") || (0,
+                c[58])((0,
+                c[64])(c[12], c[38]), c[27], (0,
+                c[new Date("1970-01-01T05:00:59.000+05:00") / 1E3])(c[10], c[13]), c[59], c[10], c[7]))
+        } catch (d) {
+            (0,
+                c[42])(c[21], (0,
+                c[17])(), c[10])
+        }
+        try {
+            c[36] != 0 && (c[55] === 3 ? (0,
+                c[42])(c[33], (0,
+                c[60])(), c[10]) : (0,
+                c[65])(c[35], c[3]))
+        } catch (d) {
+            (0,
+                c[63])(c[Math.pow(4, 5) - 2 - 1007], c[39])
+        } finally {
+            c[68] > 7 && (0,
+                c[43])(c[31], (0,
+                c[165 - 108 % Math.pow(5, 5)])(c[66], c[0]), c[31], (0,
+                c[31])(c[1], c[13]), (0,
+                c[30])(c[49], c[0]), ((0,
+                c[14])(c[58], c[32]),
+                c[38])(c[49]), c[39], c[50])
+        }
     } catch (d) {
-        return "enhanced_except_1JUBq-r-_w8_" + a
+        return "enhanced_except_vJsBw-T-_w8_" + a
     }
     return b.join("")
 }
-
 
 if (typeof require !== 'undefined' && require.main === module) {
     const myArgs = process.argv.slice(2);
     const result = encrypt(myArgs[0])
     console.log("youtube" + "zero_result:" + result)
 }
-
-

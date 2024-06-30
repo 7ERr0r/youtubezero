@@ -334,7 +334,7 @@ async fn unordered_download_spawn(
     // and set header ("headm", "3")
 
     let segment = Rc::new(Segment {
-        requested_head: false,
+        requested_head: true,  //TODO: Only first request should be requested as head (as described above)
         sq: state.borrow().current_seqnum,
         fixed_sq: RefCell::new(state.borrow().current_seqnum),
     });

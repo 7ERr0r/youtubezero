@@ -46,9 +46,11 @@ pub async fn fix_format_url_str(
             if k == target_param_name {
                 stderr!("{} token key:{} value:{}\n", isav, k, v);
                 let target_param_value = v;
-                let token = get_live_n_token(&target_param_value, base_js_bytes.as_ref()).await?;
+                //base_js_bytes.as_ref(
+                let token = get_live_n_token(&target_param_value).await?;
                 stderr!("{} token generated: {:?}\n", isav, token);
 
+                println!("{} : {}", &k, &token);
                 pairs.append_pair(&k, &token);
             } else {
                 pairs.append_pair(&k, &v);
@@ -61,23 +63,25 @@ pub async fn fix_format_url_str(
     Ok(url.to_string())
 }
 
-// async fn get_live_n_token(token_input: &str) -> Result<String> {
-//     super::nodejsrun::run_script_node(token_input, include_bytes!("ytspeedfix.js")).await
-// }
+async fn get_live_n_token(token_input: &str) -> Result<String> {
+    super::nodejsrun::run_script_node(token_input, include_bytes!("ytspeedfix.js")).await
+}
 // async fn get_non_live_sig_token(token_input: &str) -> Result<String> {
 //     super::nodejsrun::run_script_node(token_input, include_bytes!("ytsigfix.js")).await
 // }
 
-async fn get_live_n_token(token_input: &str, base_js_bytes: Option<&Bytes>) -> Result<String> {
-    let maybe_code = base_js_bytes.map(|b| extract_n_function(&b)).flatten();
-    let n_code = if let Some(ref b) = maybe_code {
-        b
-    } else {
-        &include_bytes!("ytspeedfix.js")[..]
-    };
+//TODO: Fix
+// async fn get_live_n_token(token_input: &str, base_js_bytes: Option<&Bytes>) -> Result<String> {
+//     let maybe_code = base_js_bytes.map(|b| extract_n_function(&b)).flatten();
+//     let n_code = if let Some(ref b) = maybe_code {
+//         b
+//     } else {
+//         &include_bytes!("ytspeedfix.js")[..]
+//     };
+//
+//     super::boajsrun::run_script_boa(token_input, n_code).map_err(|s| s.into())
+// }
 
-    super::boajsrun::run_script_boa(token_input, n_code).map_err(|s| s.into())
-}
 async fn get_non_live_sig_token(token_input: &str) -> Result<String> {
     super::boajsrun::run_script_boa(token_input, include_bytes!("ytsigfix.js"))
         .map_err(|s| s.into())

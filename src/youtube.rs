@@ -262,7 +262,7 @@ fn init_yt_params(sr: &mut SegmentRequest) {
     sr.params.push(("rbuf", "0".to_string()));
 
     if sr.segment.requested_head {
-        sr.params.push(("headm", "3".to_string()));
+        sr.params.push(("headm", "2".to_string()));
     } else if sr.is_live_segmented {
         // is live?
         let sq_str = sr.segment.sq;
@@ -332,6 +332,7 @@ pub async fn download_format_segment_once(
     //     );
     // }
 
+    println!("{}", req.url().as_str());
     let resp = client.execute(req).await?;
 
     handle_headers(&sr, &resp);
