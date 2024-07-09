@@ -68,15 +68,20 @@ pub async fn fix_format_url_str(
 //     super::nodejsrun::run_script_node(token_input, include_bytes!("ytsigfix.js")).await
 // }
 
-async fn get_live_n_token(token_input: &str, base_js_bytes: Option<&Bytes>) -> Result<String> {
-    let maybe_code = base_js_bytes.map(|b| extract_n_function(&b)).flatten();
-    let n_code = if let Some(ref b) = maybe_code {
-        b
-    } else {
-        &include_bytes!("ytspeedfix.js")[..]
-    };
 
-    super::boajsrun::run_script_boa(token_input, n_code).map_err(|s| s.into())
+fn get_live_n_code<'a>(base_js_bytes: Option<&'a Bytes>) -> Result<Vec<u8>> {
+    let maybe_code = base_js_bytes.map(|b| extract_n_function(&b)).flatten();
+    if let Some(b) = maybe_code {
+        Ok(b)
+    } else {
+        Ok(include_bytes!("ytspeedfix.js")[..].into())
+    }
+
+}
+async fn get_live_n_token(token_input: &str, base_js_bytes: Option<&Bytes>) -> Result<String> {
+    let n_code = get_live_n_code(base_js_bytes)?;
+
+    super::boajsrun::run_script_boa(token_input, &n_code).map_err(|s| s.into())
 }
 async fn get_non_live_sig_token(token_input: &str) -> Result<String> {
     super::boajsrun::run_script_boa(token_input, include_bytes!("ytsigfix.js"))
@@ -99,7 +104,7 @@ pub async fn fix_non_live_url(
         if k == "url" {
             urlstr = v.to_string();
 
-            urlstr = crate::extras::ytsigurlfix::fix_format_url_str(isav, &urlstr, None).await?;
+            urlstr = fix_format_url_str(isav, &urlstr, None).await?;
         } else if k == "s" {
             // signature?
             sig = Some(v.to_string());
