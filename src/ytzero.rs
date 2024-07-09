@@ -108,7 +108,7 @@ pub async fn run_with_av_format(
     let video_id = player_response.videoDetails.videoId.clone();
     let mut segment_dir = PathBuf::from(".");
     segment_dir.push("segments");
-    segment_dir.push(format!("{}", HexSlice::new(&video_id)));
+    segment_dir.push(format!("{}", HexSlice(video_id.as_bytes())));
 
     let aud_segment_dir = Some({
         let mut p = segment_dir.clone();

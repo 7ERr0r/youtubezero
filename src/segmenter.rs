@@ -46,7 +46,7 @@ pub struct SegmentsBuf {
 pub async fn start_download_joiner(
     client: reqwest::Client,
     mut txbufs: Vec<outwriter::OutputStreamSender>,
-    aformat: Rc<RefCell<model::AdaptiveFormat>>,
+    ada_format: Rc<RefCell<model::AdaptiveFormat>>,
     consts: Rc<SessionConsts>,
     isav: IsAudioVideo,
     copy_ended: Rc<RefCell<bool>>,
@@ -58,13 +58,13 @@ pub async fn start_download_joiner(
         isav,
         consts.player.videoDetails.title,
         consts.video_id,
-        aformat.borrow().bitrate,
-        aformat.borrow().mimeType
+        ada_format.borrow().bitrate,
+        ada_format.borrow().mimeType
     );
 
     let mut segment_map: BTreeMap<i64, SegmentsBuf> = Default::default();
 
-    let stream = StreamDownloader::new(isav, consts.clone(), aformat);
+    let stream = StreamDownloader::new(isav, consts.clone(), ada_format);
     let state = StreamState::new(&stream);
 
     // let join_handle =
@@ -254,7 +254,7 @@ pub enum OrderingEvent {
 #[derive(Clone)]
 pub struct StreamDownloader {
     consts: Rc<SessionConsts>,
-    aformat: Rc<RefCell<AdaptiveFormat>>,
+    ada_format: Rc<RefCell<AdaptiveFormat>>,
     max_over_head_diff: u8,
     initial_head: i64,
     isav: IsAudioVideo,
@@ -263,7 +263,7 @@ impl StreamDownloader {
     pub fn new(
         isav: IsAudioVideo,
         consts: Rc<SessionConsts>,
-        aformat: Rc<RefCell<AdaptiveFormat>>,
+        ada_format: Rc<RefCell<AdaptiveFormat>>,
     ) -> StreamDownloader {
         let is_low_latency: bool = consts.is_low_latency();
         let max_over_head_diff: u8 = if is_low_latency { 2 } else { 1 };
@@ -271,13 +271,13 @@ impl StreamDownloader {
         let initial_head = if consts.player.videoDetails.isLive.unwrap_or_default() {
             -1
         } else {
-            let content_len = aformat.borrow().content_length.unwrap_or_default();
+            let content_len = ada_format.borrow().content_length.unwrap_or_default();
             content_len / consts.fake_segment_size
         };
 
         StreamDownloader {
             consts: consts,
-            aformat: aformat,
+            ada_format,
             max_over_head_diff,
             initial_head,
             isav,
@@ -344,9 +344,9 @@ async fn unordered_download_spawn(
         .try_send(OrderingEvent::SegmentStart(segment.sq))
         .map_err(|_| YoutubezeroError::SegmentEventSendError)?;
 
-    let join_handle = {
+    let _join_handle = {
         let client_clone = client.clone();
-        let aformat = stream.aformat.clone();
+        let ada_format = stream.ada_format.clone();
         let consts = stream.consts.clone();
         //let tx_tickets = tx_tickets.clone();
         let state = state.clone();
@@ -358,7 +358,7 @@ async fn unordered_download_spawn(
                 client_clone,
                 segment.clone(),
                 tx.clone(),
-                aformat,
+                ada_format,
                 isav,
                 consts,
                 state.clone(),
