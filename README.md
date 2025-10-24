@@ -2,6 +2,10 @@ youtubezero
 ===
 Zero latency youtube live downloader
 
+
+## 2025 Update: DOES NOT WORK
+Probably due to PO Tokens 403 forbidden is returned: https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide
+
 ![screenshot](https://raw.githubusercontent.com/Szperak/youtubezero/main/screenshot.png)
 
 
